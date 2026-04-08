@@ -1,0 +1,41 @@
+{
+  "expo": {
+    "name": "SpiritLog",
+    "slug": "spiritlog",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#1A2332"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.spiritlog.app",
+      "infoPlist": {
+        "UIBackgroundModes": ["audio"]
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#1A2332"
+      },
+      "edgeToEdgeEnabled": true,
+      "package": "com.spiritlog.app"
+    },
+    "plugins": [
+      "expo-sqlite",
+      [
+        "expo-notifications",
+        {
+          "sounds": []
+        }
+      ],
+      "@react-native-google-signin/google-signin"
+    ]
+  }
+}
