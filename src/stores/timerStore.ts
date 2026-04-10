@@ -17,6 +17,8 @@ interface TimerStoreState {
   // Pending sound to play (consumed by the UI/sound layer)
   pendingSoundId: number | null;
   pendingHaptic: boolean;
+  /** Sound marker waiting for playback to finish */
+  pendingSoundMarker: number | null;
 
   // Actions
   startSession: (preset: PresetTimer) => void;
@@ -28,6 +30,8 @@ interface TimerStoreState {
   tick: () => void;
   clearPendingSound: () => void;
   clearPendingHaptic: () => void;
+  clearPendingSoundMarker: () => void;
+  soundMarkerFinished: () => void;
   reset: () => void;
   getRemainingMs: () => number | null;
 }
@@ -54,6 +58,7 @@ export const useTimerStore = create<TimerStoreState>((set, get) => ({
   engineState: emptyEngineState,
   pendingSoundId: null,
   pendingHaptic: false,
+  pendingSoundMarker: null,
 
   startSession: (preset) => {
     const elements = buildElements(preset);
@@ -66,6 +71,7 @@ export const useTimerStore = create<TimerStoreState>((set, get) => ({
       engineState: state,
       pendingSoundId: null,
       pendingHaptic: false,
+      pendingSoundMarker: null,
     });
   },
 
@@ -81,7 +87,7 @@ export const useTimerStore = create<TimerStoreState>((set, get) => ({
 
   stop: () => {
     const finalState = engine.stop();
-    set({ isPaused: true, engineState: finalState });
+    set({ isPaused: true, engineState: finalState, pendingSoundMarker: null });
     return finalState;
   },
 
@@ -91,12 +97,13 @@ export const useTimerStore = create<TimerStoreState>((set, get) => ({
       engineState: result.state,
       pendingSoundId: result.playSoundId,
       pendingHaptic: result.phaseTransitioned,
+      pendingSoundMarker: null,
     });
   },
 
   restartCurrent: () => {
     engine.restartCurrent();
-    set({ engineState: engine.getState() });
+    set({ engineState: engine.getState(), pendingSoundMarker: null });
   },
 
   tick: () => {
@@ -104,7 +111,13 @@ export const useTimerStore = create<TimerStoreState>((set, get) => ({
     const updates: Partial<TimerStoreState> = { engineState: result.state };
 
     if (result.playSoundId !== null) {
-      updates.pendingSoundId = result.playSoundId;
+      if (result.waitingForSound) {
+        // Sound marker: use pendingSoundMarker (waits for completion)
+        updates.pendingSoundMarker = result.playSoundId;
+      } else {
+        // Transition sound: fire-and-forget
+        updates.pendingSoundId = result.playSoundId;
+      }
     }
     if (result.phaseTransitioned) {
       updates.pendingHaptic = true;
@@ -118,6 +131,16 @@ export const useTimerStore = create<TimerStoreState>((set, get) => ({
 
   clearPendingSound: () => set({ pendingSoundId: null }),
   clearPendingHaptic: () => set({ pendingHaptic: false }),
+  clearPendingSoundMarker: () => set({ pendingSoundMarker: null }),
+
+  soundMarkerFinished: () => {
+    const result = engine.soundMarkerFinished();
+    set({
+      engineState: result.state,
+      pendingSoundMarker: null,
+      pendingHaptic: result.phaseTransitioned,
+    });
+  },
 
   getRemainingMs: () => engine.getRemainingMs(),
 
@@ -131,6 +154,7 @@ export const useTimerStore = create<TimerStoreState>((set, get) => ({
       engineState: emptyEngineState,
       pendingSoundId: null,
       pendingHaptic: false,
+      pendingSoundMarker: null,
     });
   },
 }));

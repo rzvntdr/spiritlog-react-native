@@ -53,6 +53,29 @@ class SoundEngine {
   }
 
   /**
+   * Play a sound and return a promise that resolves when it finishes.
+   * Used for sound marker elements that need to wait for completion.
+   */
+  async playSoundAndWait(soundId: number): Promise<void> {
+    const file = SOUND_FILES[soundId];
+    if (!file) return;
+
+    try {
+      const { sound } = await Audio.Sound.createAsync(file, { shouldPlay: true });
+      await new Promise<void>((resolve) => {
+        sound.setOnPlaybackStatusUpdate((status) => {
+          if (status.isLoaded && status.didJustFinish) {
+            sound.unloadAsync();
+            resolve();
+          }
+        });
+      });
+    } catch (e) {
+      // Silently fail
+    }
+  }
+
+  /**
    * Start ambient sound loop on a dedicated channel.
    */
   async startAmbient(soundId: number, volume = 0.5): Promise<void> {

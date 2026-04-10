@@ -1,5 +1,5 @@
-import React, { useEffect, useState, useMemo } from 'react';
-import { View, Text, Pressable, FlatList, ActivityIndicator } from 'react-native';
+import React, { useEffect, useState, useMemo, useCallback } from 'react';
+import { View, Text, Pressable, FlatList, ActivityIndicator, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/navigation';
@@ -135,6 +135,7 @@ export default function JourneyScreen({ navigation }: Props) {
 
   const loadSessions = useSessionStore((s) => s.loadSessions);
   const loadStats = useSessionStore((s) => s.loadStats);
+  const deleteSession = useSessionStore((s) => s.deleteSession);
   const sessions = useSessionStore((s) => s.sessions);
   const stats = useSessionStore((s) => s.stats);
   const isLoaded = useSessionStore((s) => s.isLoaded);
@@ -185,6 +186,24 @@ export default function JourneyScreen({ navigation }: Props) {
   } else {
     data.push({ type: 'empty' });
   }
+
+  const handleDeleteSession = useCallback((session: MeditationSession) => {
+    Alert.alert(
+      'Delete Session',
+      `Delete the ${session.duration} min session from ${formatSessionDate(session.date)}?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            await deleteSession(session.id);
+            loadStats();
+          },
+        },
+      ],
+    );
+  }, [deleteSession, loadStats]);
 
   const renderItem = ({ item }: { item: ListItem }) => {
     switch (item.type) {
@@ -276,9 +295,12 @@ export default function JourneyScreen({ navigation }: Props) {
                 {formatSessionDate(item.session.date)}
               </Text>
             </View>
-            <Text style={{ color: c.accent, fontWeight: '700', fontSize: 15 }}>
+            <Text style={{ color: c.accent, fontWeight: '700', fontSize: 15, marginRight: 12 }}>
               {item.session.duration} min
             </Text>
+            <Pressable onPress={() => handleDeleteSession(item.session)} hitSlop={8}>
+              <Text style={{ color: c.error, fontSize: 18 }}>✕</Text>
+            </Pressable>
           </View>
         );
 

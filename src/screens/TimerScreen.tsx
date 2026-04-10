@@ -71,6 +71,9 @@ export default function TimerScreen({ navigation, route }: Props) {
   const pendingHaptic = useTimerStore((s) => s.pendingHaptic);
   const pendingSoundId = useTimerStore((s) => s.pendingSoundId);
   const clearPendingSound = useTimerStore((s) => s.clearPendingSound);
+  const pendingSoundMarker = useTimerStore((s) => s.pendingSoundMarker);
+  const clearPendingSoundMarker = useTimerStore((s) => s.clearPendingSoundMarker);
+  const soundMarkerFinished = useTimerStore((s) => s.soundMarkerFinished);
   const getRemainingMs = useTimerStore((s) => s.getRemainingMs);
 
   const [saveDialogVisible, setSaveDialogVisible] = useState(false);
@@ -144,13 +147,23 @@ export default function TimerScreen({ navigation, route }: Props) {
     };
   }, [isPaused, isActive, tick]);
 
-  // Play pending sounds from timer engine
+  // Play pending sounds from timer engine (fire-and-forget transition sounds)
   useEffect(() => {
     if (pendingSoundId !== null) {
       soundEngine.playSound(pendingSoundId);
       clearPendingSound();
     }
   }, [pendingSoundId, clearPendingSound]);
+
+  // Play sound marker elements — wait for the sound to finish, then advance
+  useEffect(() => {
+    if (pendingSoundMarker !== null) {
+      clearPendingSoundMarker();
+      soundEngine.playSoundAndWait(pendingSoundMarker).then(() => {
+        soundMarkerFinished();
+      });
+    }
+  }, [pendingSoundMarker, clearPendingSoundMarker, soundMarkerFinished]);
 
   // Start/stop interval sounds when phase changes
   useEffect(() => {

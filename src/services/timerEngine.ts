@@ -19,6 +19,8 @@ export interface TimerTickResult {
   playSoundId: number | null;
   /** true if a phase just transitioned (for haptics) */
   phaseTransitioned: boolean;
+  /** true if the engine is waiting for a sound marker to finish playing */
+  waitingForSound: boolean;
 }
 
 const MAX_INFINITE_MS = 24 * 60 * 60 * 1000; // 24 hours safety cap
@@ -30,6 +32,7 @@ export class TimerEngine {
   private totalMeditationMs = 0;
   private isRunning = false;
   private lastTickTime = 0;
+  private waitingForSound = false;
 
   init(elements: MeditationElement[]): TimerEngineState {
     this.elements = elements;
@@ -38,6 +41,7 @@ export class TimerEngine {
     this.totalMeditationMs = 0;
     this.isRunning = false;
     this.lastTickTime = 0;
+    this.waitingForSound = false;
     return this.getState();
   }
 
@@ -52,7 +56,22 @@ export class TimerEngine {
 
   stop(): TimerEngineState {
     this.isRunning = false;
+    this.waitingForSound = false;
     return this.getState();
+  }
+
+  /** Called when a sound marker finishes playing. Advances past it. */
+  soundMarkerFinished(): TimerTickResult {
+    this.waitingForSound = false;
+    this.currentIndex++;
+    this.elapsedInCurrentMs = 0;
+    this.lastTickTime = Date.now();
+    return {
+      state: this.getState(),
+      playSoundId: null,
+      phaseTransitioned: true,
+      waitingForSound: false,
+    };
   }
 
   skipToNext(): TimerTickResult {
@@ -64,6 +83,7 @@ export class TimerEngine {
       playSoundId = current.endSound;
     }
 
+    this.waitingForSound = false;
     this.currentIndex++;
     this.elapsedInCurrentMs = 0;
 
@@ -80,11 +100,13 @@ export class TimerEngine {
       state: this.getState(),
       playSoundId,
       phaseTransitioned: true,
+      waitingForSound: false,
     };
   }
 
   restartCurrent(): void {
     this.elapsedInCurrentMs = 0;
+    this.waitingForSound = false;
   }
 
   /**
@@ -92,7 +114,12 @@ export class TimerEngine {
    */
   tick(): TimerTickResult {
     if (!this.isRunning || this.currentIndex >= this.elements.length) {
-      return { state: this.getState(), playSoundId: null, phaseTransitioned: false };
+      return { state: this.getState(), playSoundId: null, phaseTransitioned: false, waitingForSound: false };
+    }
+
+    // If waiting for a sound marker to finish, don't advance
+    if (this.waitingForSound) {
+      return { state: this.getState(), playSoundId: null, phaseTransitioned: false, waitingForSound: true };
     }
 
     const now = Date.now();
@@ -104,20 +131,10 @@ export class TimerEngine {
     let phaseTransitioned = false;
 
     if (current.kind === 'sound') {
-      // Play sound on first tick, then dwell to let it finish
-      if (this.elapsedInCurrentMs === 0 && deltaMs > 0) {
-        playSoundId = current.soundId;
-      }
-
-      this.elapsedInCurrentMs += deltaMs;
-
-      if (this.elapsedInCurrentMs >= SOUND_DWELL_MS) {
-        this.currentIndex++;
-        this.elapsedInCurrentMs = 0;
-        phaseTransitioned = true;
-      }
-
-      return { state: this.getState(), playSoundId, phaseTransitioned };
+      // Fire the sound and wait for it to finish
+      playSoundId = current.soundId;
+      this.waitingForSound = true;
+      return { state: this.getState(), playSoundId, phaseTransitioned: false, waitingForSound: true };
     }
 
     if (current.kind === 'duration') {
@@ -145,7 +162,7 @@ export class TimerEngine {
       }
     }
 
-    return { state: this.getState(), playSoundId, phaseTransitioned };
+    return { state: this.getState(), playSoundId, phaseTransitioned, waitingForSound: false };
   }
 
   getState(): TimerEngineState {
@@ -169,9 +186,9 @@ export class TimerEngine {
     if (current.kind === 'sound') {
       return {
         currentElementIndex: this.currentIndex,
-        displayTimeMs: Math.max(SOUND_DWELL_MS - this.elapsedInCurrentMs, 0),
-        phaseElapsedMs: this.elapsedInCurrentMs,
-        phaseProgress: Math.min(this.elapsedInCurrentMs / SOUND_DWELL_MS, 1),
+        displayTimeMs: 0,
+        phaseElapsedMs: 0,
+        phaseProgress: this.waitingForSound ? 0.5 : 0,
         phaseName: current.name,
         phaseType: null,
         isComplete: false,
@@ -223,14 +240,7 @@ export class TimerEngine {
 
     for (let i = this.currentIndex; i < this.elements.length; i++) {
       const el = this.elements[i];
-      if (el.kind === 'sound') {
-        if (i === this.currentIndex) {
-          remaining += Math.max(SOUND_DWELL_MS - this.elapsedInCurrentMs, 0);
-        } else {
-          remaining += SOUND_DWELL_MS;
-        }
-        continue;
-      }
+      if (el.kind === 'sound') continue; // Sound markers have variable duration, skip
       if (el.type === 'INFINITE') return null;
 
       if (i === this.currentIndex) {
