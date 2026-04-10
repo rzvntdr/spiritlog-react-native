@@ -131,15 +131,17 @@ class SoundEngine {
 
   /**
    * Called every tick from the timer. Checks if any interval sounds should play.
+   * Updates nextPlayTime BEFORE playing to prevent overlapping triggers from
+   * concurrent ticks.
    */
-  async tick(elapsedMs: number): Promise<void> {
+  tick(elapsedMs: number): void {
     for (const tracker of this.intervalTrackers) {
-      if (tracker.config.type === 'AMBIENT') continue; // Ambient handled separately
+      if (tracker.config.type === 'AMBIENT') continue;
 
       if (elapsedMs >= tracker.nextPlayTime) {
-        await this.playSound(tracker.config.soundId);
         tracker.lastPlayTime = elapsedMs;
         tracker.nextPlayTime = this.calculateNextTime(tracker.config, elapsedMs);
+        this.playSound(tracker.config.soundId); // fire-and-forget
       }
     }
   }

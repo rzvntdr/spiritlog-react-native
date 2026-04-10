@@ -7,7 +7,14 @@ const CURRENT_VERSION = 1;
 let db: SQLite.SQLiteDatabase | null = null;
 
 export async function getDatabase(): Promise<SQLite.SQLiteDatabase> {
-  if (db) return db;
+  if (db) {
+    try {
+      await db.getFirstAsync('SELECT 1');
+      return db;
+    } catch {
+      db = null;
+    }
+  }
   db = await SQLite.openDatabaseAsync(DB_NAME);
   await runMigrations(db);
   return db;

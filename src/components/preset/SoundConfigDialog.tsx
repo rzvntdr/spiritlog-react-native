@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { View, Text, Pressable, ScrollView, Modal } from 'react-native';
 import { useTheme } from '../../theme/ThemeContext';
 import { DurationConfig, SoundConfig } from '../../types/preset';
-import { SOUNDS, getSoundById } from '../../types/sound';
+import { getSoundById } from '../../types/sound';
 import IntervalSoundDialog from './IntervalSoundDialog';
 
 interface Props {
@@ -12,79 +12,14 @@ interface Props {
   phase: DurationConfig;
 }
 
-function SoundDropdown({
-  label,
-  value,
-  onChange,
-  colors,
-}: {
-  label: string;
-  value: number | null;
-  onChange: (id: number | null) => void;
-  colors: ReturnType<typeof useTheme>['theme']['colors'];
-}) {
-  const [open, setOpen] = useState(false);
-  const selected = value ? getSoundById(value) : null;
-
-  return (
-    <View style={{ marginBottom: 12 }}>
-      <Text style={{ fontSize: 12, color: colors.onSurface, marginBottom: 4 }}>{label}</Text>
-      <Pressable
-        onPress={() => setOpen(!open)}
-        style={{
-          backgroundColor: colors.surfaceVariant,
-          borderRadius: 8,
-          padding: 12,
-          flexDirection: 'row',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-        }}
-      >
-        <Text style={{ color: colors.onBackground }}>{selected ? selected.name : 'None'}</Text>
-        <Text style={{ color: colors.onSurface }}>{open ? '▲' : '▼'}</Text>
-      </Pressable>
-      {open && (
-        <View style={{ backgroundColor: colors.surfaceVariant, borderRadius: 8, marginTop: 4 }}>
-          <Pressable
-            onPress={() => { onChange(null); setOpen(false); }}
-            style={{ padding: 10, borderBottomWidth: 1, borderBottomColor: colors.surface }}
-          >
-            <Text style={{ color: colors.onSurface }}>None</Text>
-          </Pressable>
-          {SOUNDS.map((s) => (
-            <Pressable
-              key={s.id}
-              onPress={() => { onChange(s.id); setOpen(false); }}
-              style={{
-                padding: 10,
-                flexDirection: 'row',
-                justifyContent: 'space-between',
-                backgroundColor: value === s.id ? colors.primaryContainer : 'transparent',
-                borderRadius: 4,
-              }}
-            >
-              <Text style={{ color: value === s.id ? colors.onPrimary : colors.onBackground }}>{s.name}</Text>
-              <Text style={{ color: colors.accent }}>▶</Text>
-            </Pressable>
-          ))}
-        </View>
-      )}
-    </View>
-  );
-}
-
 export default function SoundConfigDialog({ visible, onClose, onSave, phase }: Props) {
   const { theme } = useTheme();
   const c = theme.colors;
-  const [startSound, setStartSound] = useState<number | null>(phase.startSound);
-  const [endSound, setEndSound] = useState<number | null>(phase.endSound);
   const [intervalSounds, setIntervalSounds] = useState<SoundConfig[]>([...phase.soundConfigs]);
   const [addIntervalVisible, setAddIntervalVisible] = useState(false);
 
   React.useEffect(() => {
     if (visible) {
-      setStartSound(phase.startSound);
-      setEndSound(phase.endSound);
       setIntervalSounds([...phase.soundConfigs]);
     }
   }, [visible, phase]);
@@ -119,15 +54,8 @@ export default function SoundConfigDialog({ visible, onClose, onSave, phase }: P
           </Text>
 
           <ScrollView>
-            {/* Start/End Sounds */}
-            <Text style={{ fontSize: 14, fontWeight: '600', color: c.onBackground, marginBottom: 8 }}>
-              Start/End Sounds
-            </Text>
-            <SoundDropdown label="Start Sound" value={startSound} onChange={setStartSound} colors={c} />
-            <SoundDropdown label="End Sound" value={endSound} onChange={setEndSound} colors={c} />
-
             {/* Interval Sounds */}
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 8, marginBottom: 8 }}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
               <Text style={{ fontSize: 14, fontWeight: '600', color: c.onBackground }}>Interval Sounds</Text>
               <Pressable
                 onPress={() => setAddIntervalVisible(true)}
@@ -172,7 +100,7 @@ export default function SoundConfigDialog({ visible, onClose, onSave, phase }: P
               <Text style={{ color: c.primary, fontWeight: '600' }}>Cancel</Text>
             </Pressable>
             <Pressable
-              onPress={() => { onSave(startSound, endSound, intervalSounds); onClose(); }}
+              onPress={() => { onSave(null, null, intervalSounds); onClose(); }}
               style={{ backgroundColor: c.primaryContainer, borderRadius: 8, paddingHorizontal: 16, paddingVertical: 10 }}
             >
               <Text style={{ color: c.onPrimary, fontWeight: '600' }}>Save Changes</Text>

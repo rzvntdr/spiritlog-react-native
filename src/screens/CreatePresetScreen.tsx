@@ -150,29 +150,38 @@ export default function CreatePresetScreen({ navigation, route }: Props) {
   };
 
   const handleSave = async () => {
-    // Convert builder elements to PresetTimer
+    // Convert builder elements to PresetTimer.
+    // Sound markers before a duration become its startSound.
+    // Sound markers after a duration (before the next) become its endSound.
     const durations: DurationConfig[] = [];
-    let currentDuration: DurationConfig | null = null;
+    const pendingSounds: number[] = []; // sound IDs waiting to be attached
 
     for (const el of elements) {
-      if (el.kind === 'duration') {
-        if (currentDuration) durations.push(currentDuration);
-        currentDuration = { ...el.config };
-      } else if (el.kind === 'sound') {
-        // Attach to nearest duration as start or end sound
-        // If no current duration yet, it's a start sound for the next one
-        // If there is one, it's an end sound for the current one
+      if (el.kind === 'sound') {
+        if (durations.length > 0 && pendingSounds.length === 0) {
+          // Sound after a duration → endSound of the previous duration
+          durations[durations.length - 1].endSound = el.soundId;
+        } else {
+          // Sound before any duration or consecutive sounds → queue as startSound
+          pendingSounds.push(el.soundId);
+        }
+      } else if (el.kind === 'duration') {
+        const config = { ...el.config };
+        // Attach any pending sounds as startSound (use the last one if multiple)
+        if (pendingSounds.length > 0) {
+          config.startSound = pendingSounds[pendingSounds.length - 1];
+          pendingSounds.length = 0;
+        }
+        durations.push(config);
       }
     }
-    if (currentDuration) durations.push(currentDuration);
 
-    // If no duration elements, just use the raw sound/duration list
-    // Simpler approach: just extract all duration elements directly
-    const finalDurations = elements
-      .filter((e): e is BuilderElement & { kind: 'duration' } => e.kind === 'duration')
-      .map((e) => e.config);
+    // If there are trailing sounds after the last duration, attach as endSound
+    if (pendingSounds.length > 0 && durations.length > 0) {
+      durations[durations.length - 1].endSound = pendingSounds[pendingSounds.length - 1];
+    }
 
-    if (finalDurations.length === 0) {
+    if (durations.length === 0) {
       Alert.alert('No Phases', 'Add at least one meditation phase.');
       return;
     }
@@ -181,19 +190,23 @@ export default function CreatePresetScreen({ navigation, route }: Props) {
       id: existingPreset?.id ?? generateUUID(),
       name: name.trim(),
       description: description.trim(),
-      durations: finalDurations,
+      durations,
       isFavorite: existingPreset?.isFavorite ?? false,
       sortOrder: existingPreset?.sortOrder ?? 0,
       lastUsed: existingPreset?.lastUsed ?? 0,
       createdAt: existingPreset?.createdAt ?? Date.now(),
     };
 
-    if (isEditing) {
-      await updatePreset(preset);
-    } else {
-      await createPreset(preset);
+    try {
+      if (isEditing) {
+        await updatePreset(preset);
+      } else {
+        await createPreset(preset);
+      }
+      navigation.goBack();
+    } catch (e: any) {
+      Alert.alert('Save Failed', e.message ?? 'An error occurred while saving the preset.');
     }
-    navigation.goBack();
   };
 
   // Get the currently editing element for the dialogs

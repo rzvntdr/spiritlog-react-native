@@ -166,12 +166,12 @@ export default function TimerScreen({ navigation, route }: Props) {
     }
   }, [engineState.currentElementIndex, elements]);
 
-  // Tick interval sounds alongside the timer
+  // Tick interval sounds alongside the timer (use phaseElapsedMs which always counts up)
   useEffect(() => {
     if (!isPaused && isActive && engineState.phaseType) {
-      soundEngine.tick(engineState.displayTimeMs);
+      soundEngine.tick(engineState.phaseElapsedMs);
     }
-  }, [engineState.displayTimeMs, isPaused, isActive, engineState.phaseType]);
+  }, [engineState.phaseElapsedMs, isPaused, isActive, engineState.phaseType]);
 
   // Handle haptic feedback
   useEffect(() => {
@@ -229,17 +229,21 @@ export default function TimerScreen({ navigation, route }: Props) {
 
   const handleSaveSession = useCallback(
     async (durationMinutes: number) => {
-      const session: MeditationSession = {
-        id: generateUUID(),
-        duration: durationMinutes,
-        date: Date.now(),
-        presetId: preset?.id ?? null,
-        notes: null,
-      };
-      await insertSession(session);
-      setSaveDialogVisible(false);
-      reset();
-      navigation.goBack();
+      try {
+        const session: MeditationSession = {
+          id: generateUUID(),
+          duration: durationMinutes,
+          date: Date.now(),
+          presetId: preset?.id ?? null,
+          notes: null,
+        };
+        await insertSession(session);
+        setSaveDialogVisible(false);
+        reset();
+        navigation.goBack();
+      } catch (e: any) {
+        Alert.alert('Save Error', e?.message ?? 'Failed to save session');
+      }
     },
     [preset, insertSession, reset, navigation]
   );

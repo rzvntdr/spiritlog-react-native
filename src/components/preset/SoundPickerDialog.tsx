@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { View, Text, Pressable, TextInput, ScrollView, Modal } from 'react-native';
 import { useTheme } from '../../theme/ThemeContext';
 import { SOUNDS } from '../../types/sound';
+import { soundEngine } from '../../services/soundEngine';
 
 interface Props {
   visible: boolean;
@@ -93,7 +94,7 @@ export default function SoundPickerDialog({
                 <Text style={{ flex: 1, color: soundId === s.id ? c.onPrimary : c.onBackground, fontSize: 16 }}>
                   {s.name}
                 </Text>
-                <Pressable hitSlop={8}>
+                <Pressable hitSlop={8} onPress={() => soundEngine.playSound(s.id)}>
                   <Text style={{ color: c.accent, fontSize: 16 }}>▶</Text>
                 </Pressable>
               </Pressable>

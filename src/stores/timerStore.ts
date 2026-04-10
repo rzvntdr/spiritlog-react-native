@@ -37,6 +37,7 @@ const engine = new TimerEngine();
 const emptyEngineState: TimerEngineState = {
   currentElementIndex: 0,
   displayTimeMs: 0,
+  phaseElapsedMs: 0,
   phaseProgress: 0,
   phaseName: '',
   phaseType: null,

@@ -28,7 +28,7 @@ export async function insertSession(session: MeditationSession): Promise<void> {
       session.id,
       session.duration,
       session.date,
-      session.presetId,
+      session.presetId ?? null,
       session.notes ? JSON.stringify(session.notes) : null,
     ]
   );

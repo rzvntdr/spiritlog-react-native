@@ -4,6 +4,7 @@ import { DurationType } from '../types/preset';
 export interface TimerEngineState {
   currentElementIndex: number;
   displayTimeMs: number;
+  phaseElapsedMs: number; // elapsed in current phase (always counts up)
   phaseProgress: number; // 0–1
   phaseName: string;
   phaseType: DurationType | null;
@@ -103,12 +104,19 @@ export class TimerEngine {
     let phaseTransitioned = false;
 
     if (current.kind === 'sound') {
-      // Sound element: play immediately and advance
-      playSoundId = current.soundId;
-      this.currentIndex++;
-      phaseTransitioned = true;
+      // Play sound on first tick, then dwell to let it finish
+      if (this.elapsedInCurrentMs === 0 && deltaMs > 0) {
+        playSoundId = current.soundId;
+      }
 
-      // If next is also a sound, it'll be handled next tick
+      this.elapsedInCurrentMs += deltaMs;
+
+      if (this.elapsedInCurrentMs >= SOUND_DWELL_MS) {
+        this.currentIndex++;
+        this.elapsedInCurrentMs = 0;
+        phaseTransitioned = true;
+      }
+
       return { state: this.getState(), playSoundId, phaseTransitioned };
     }
 
@@ -148,6 +156,7 @@ export class TimerEngine {
       return {
         currentElementIndex: this.currentIndex,
         displayTimeMs: 0,
+        phaseElapsedMs: 0,
         phaseProgress: 1,
         phaseName: '',
         phaseType: null,
@@ -160,8 +169,9 @@ export class TimerEngine {
     if (current.kind === 'sound') {
       return {
         currentElementIndex: this.currentIndex,
-        displayTimeMs: 0,
-        phaseProgress: 0,
+        displayTimeMs: Math.max(SOUND_DWELL_MS - this.elapsedInCurrentMs, 0),
+        phaseElapsedMs: this.elapsedInCurrentMs,
+        phaseProgress: Math.min(this.elapsedInCurrentMs / SOUND_DWELL_MS, 1),
         phaseName: current.name,
         phaseType: null,
         isComplete: false,
@@ -194,6 +204,7 @@ export class TimerEngine {
     return {
       currentElementIndex: this.currentIndex,
       displayTimeMs,
+      phaseElapsedMs: this.elapsedInCurrentMs,
       phaseProgress,
       phaseName: current.name,
       phaseType: current.type,
@@ -212,7 +223,14 @@ export class TimerEngine {
 
     for (let i = this.currentIndex; i < this.elements.length; i++) {
       const el = this.elements[i];
-      if (el.kind !== 'duration') continue;
+      if (el.kind === 'sound') {
+        if (i === this.currentIndex) {
+          remaining += Math.max(SOUND_DWELL_MS - this.elapsedInCurrentMs, 0);
+        } else {
+          remaining += SOUND_DWELL_MS;
+        }
+        continue;
+      }
       if (el.type === 'INFINITE') return null;
 
       if (i === this.currentIndex) {
