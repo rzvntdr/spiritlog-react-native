@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect } from 'react';
 import { View, Text, Pressable, Alert, ActivityIndicator, Switch } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -7,6 +7,7 @@ import { useTheme } from '../theme/ThemeContext';
 import { useBackupStore } from '../stores/backupStore';
 import { usePresetStore } from '../stores/presetStore';
 import { useSessionStore } from '../stores/sessionStore';
+import { useSettingsStore } from '../stores/settingsStore';
 import { isGoogleSignInAvailable } from '../services/googleAuthService';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Backup'>;
@@ -31,9 +32,8 @@ export default function BackupScreen({ navigation }: Props) {
   const loadPresets = usePresetStore((s) => s.loadPresets);
   const loadSessions = useSessionStore((s) => s.loadSessions);
 
-  // Auto backup toggles (stored locally for now)
-  const [autoAfterSession, setAutoAfterSession] = useState(false);
-  const [autoDaily, setAutoDaily] = useState(false);
+  const autoAfterSession = useSettingsStore((s) => s.autoBackupAfterSession);
+  const setAutoAfterSession = useSettingsStore((s) => s.setAutoBackupAfterSession);
 
   useEffect(() => {
     loadPersistedState();
@@ -240,7 +240,7 @@ export default function BackupScreen({ navigation }: Props) {
             Auto Backup Settings
           </Text>
 
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
             <View>
               <Text style={{ color: c.onBackground, fontSize: 14 }}>After Each Session</Text>
               <Text style={{ color: c.onSurface, fontSize: 11 }}>Automatically backup after meditation</Text>
@@ -250,19 +250,6 @@ export default function BackupScreen({ navigation }: Props) {
               onValueChange={setAutoAfterSession}
               trackColor={{ false: c.surfaceVariant, true: c.primaryContainer }}
               thumbColor={autoAfterSession ? c.primary : c.onSurface}
-            />
-          </View>
-
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-            <View>
-              <Text style={{ color: c.onBackground, fontSize: 14 }}>Daily Backup</Text>
-              <Text style={{ color: c.onSurface, fontSize: 11 }}>Backup once every day</Text>
-            </View>
-            <Switch
-              value={autoDaily}
-              onValueChange={setAutoDaily}
-              trackColor={{ false: c.surfaceVariant, true: c.primaryContainer }}
-              thumbColor={autoDaily ? c.primary : c.onSurface}
             />
           </View>
         </View>

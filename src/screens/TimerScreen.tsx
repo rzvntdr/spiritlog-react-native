@@ -10,6 +10,7 @@ import { useTimerStore } from '../stores/timerStore';
 import { usePresetStore } from '../stores/presetStore';
 import { useSessionStore } from '../stores/sessionStore';
 import { useSettingsStore } from '../stores/settingsStore';
+import { useBackupStore } from '../stores/backupStore';
 import { MeditationSession } from '../types/session';
 import { generateUUID } from '../utils/uuid';
 import { getPresetTotalDurationMs } from '../utils/presetBuilder';
@@ -251,6 +252,16 @@ export default function TimerScreen({ navigation, route }: Props) {
           notes: null,
         };
         await insertSession(session);
+
+        // Auto-backup after session if enabled and signed in
+        const autoBackup = useSettingsStore.getState().autoBackupAfterSession;
+        if (autoBackup) {
+          const { isSignedIn, backupToDrive } = useBackupStore.getState();
+          if (isSignedIn) {
+            backupToDrive().catch(() => {}); // fire-and-forget
+          }
+        }
+
         setSaveDialogVisible(false);
         reset();
         navigation.goBack();

@@ -5,12 +5,14 @@ interface SettingsState {
   themeId: string;
   screenAwake: boolean;
   hapticsEnabled: boolean;
+  autoBackupAfterSession: boolean;
   isLoaded: boolean;
 
   // Actions
   setThemeId: (id: string) => void;
   setScreenAwake: (value: boolean) => void;
   setHapticsEnabled: (value: boolean) => void;
+  setAutoBackupAfterSession: (value: boolean) => void;
   loadSettings: () => Promise<void>;
 }
 
@@ -20,6 +22,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   themeId: 'ocean',
   screenAwake: true,
   hapticsEnabled: true,
+  autoBackupAfterSession: false,
   isLoaded: false,
 
   setThemeId: (id) => {
@@ -37,6 +40,11 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     persistSettings(get());
   },
 
+  setAutoBackupAfterSession: (value) => {
+    set({ autoBackupAfterSession: value });
+    persistSettings(get());
+  },
+
   loadSettings: async () => {
     try {
       const raw = await AsyncStorage.getItem(SETTINGS_KEY);
@@ -46,6 +54,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
           themeId: parsed.themeId ?? 'ocean',
           screenAwake: parsed.screenAwake ?? true,
           hapticsEnabled: parsed.hapticsEnabled ?? true,
+          autoBackupAfterSession: parsed.autoBackupAfterSession ?? false,
           isLoaded: true,
         });
       } else {
@@ -62,6 +71,7 @@ function persistSettings(state: SettingsState) {
     themeId: state.themeId,
     screenAwake: state.screenAwake,
     hapticsEnabled: state.hapticsEnabled,
+    autoBackupAfterSession: state.autoBackupAfterSession,
   };
   AsyncStorage.setItem(SETTINGS_KEY, JSON.stringify(data));
 }

@@ -16,7 +16,9 @@
       "supportsTablet": false,
       "bundleIdentifier": "com.spiritlog.app",
       "infoPlist": {
-        "UIBackgroundModes": ["audio"]
+        "UIBackgroundModes": [
+          "audio"
+        ]
       }
     },
     "android": {
@@ -35,7 +37,8 @@
           "sounds": []
         }
       ],
-      "@react-native-google-signin/google-signin"
+      "@react-native-google-signin/google-signin",
+      "@react-native-community/datetimepicker"
     ]
   }
 }

@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo, useCallback } from 'react';
+import React, { useEffect, useCallback } from 'react';
 import { View, Text, Pressable, FlatList, ActivityIndicator, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -7,35 +7,10 @@ import { useTheme } from '../theme/ThemeContext';
 import { useSessionStore } from '../stores/sessionStore';
 import { formatDuration } from '../utils/time';
 import { MeditationSession } from '../types/session';
+import CalendarHeatmap from '../components/journey/CalendarHeatmap';
+import DurationLineChart from '../components/journey/DurationLineChart';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Journey'>;
-type TimeRange = 'week' | 'month' | '3months' | 'year';
-
-function getRangeStartMs(range: TimeRange): number {
-  const now = new Date();
-  switch (range) {
-    case 'week': {
-      const day = now.getDay();
-      const diff = day === 0 ? 6 : day - 1;
-      const monday = new Date(now);
-      monday.setDate(now.getDate() - diff);
-      monday.setHours(0, 0, 0, 0);
-      return monday.getTime();
-    }
-    case 'month': {
-      const start = new Date(now.getFullYear(), now.getMonth(), 1);
-      return start.getTime();
-    }
-    case '3months': {
-      const start = new Date(now.getFullYear(), now.getMonth() - 2, 1);
-      return start.getTime();
-    }
-    case 'year': {
-      const start = new Date(now.getFullYear(), 0, 1);
-      return start.getTime();
-    }
-  }
-}
 
 function formatSessionDate(timestamp: number): string {
   const d = new Date(timestamp);
@@ -47,91 +22,9 @@ function formatSessionDate(timestamp: number): string {
   return `${months[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()} · ${h12}:${minutes} ${ampm}`;
 }
 
-// Simple bar chart component
-function ProgressChart({
-  sessions,
-  range,
-  colors,
-}: {
-  sessions: MeditationSession[];
-  range: TimeRange;
-  colors: ReturnType<typeof useTheme>['theme']['colors'];
-}) {
-  // Group sessions by day
-  const dailyMinutes = useMemo(() => {
-    const map = new Map<string, number>();
-    for (const s of sessions) {
-      const d = new Date(s.date);
-      const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
-      map.set(key, (map.get(key) ?? 0) + s.duration);
-    }
-
-    // Generate labels
-    const now = new Date();
-    let days: Date[];
-    if (range === 'week') {
-      days = Array.from({ length: 7 }, (_, i) => {
-        const d = new Date(now);
-        const day = d.getDay();
-        const diff = day === 0 ? 6 : day - 1;
-        d.setDate(d.getDate() - diff + i);
-        return d;
-      });
-    } else {
-      // For month/3month/year, show last 7 periods
-      const count = range === 'month' ? 4 : range === '3months' ? 12 : 12;
-      days = Array.from({ length: Math.min(count, 7) }, (_, i) => {
-        const d = new Date(now);
-        d.setDate(d.getDate() - (Math.min(count, 7) - 1 - i));
-        return d;
-      });
-    }
-
-    return days.map((d) => {
-      const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
-      const dayNames = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
-      return { label: dayNames[d.getDay()], minutes: map.get(key) ?? 0 };
-    });
-  }, [sessions, range]);
-
-  const maxMinutes = Math.max(...dailyMinutes.map((d) => d.minutes), 1);
-
-  return (
-    <View style={{ backgroundColor: colors.surface, borderRadius: 12, padding: 16, marginBottom: 16 }}>
-      <Text style={{ fontSize: 14, fontWeight: '600', color: colors.onBackground, marginBottom: 12 }}>
-        Progress
-      </Text>
-      <View style={{ flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-around', height: 120 }}>
-        {dailyMinutes.map((day, i) => {
-          const barHeight = day.minutes > 0 ? Math.max((day.minutes / maxMinutes) * 100, 4) : 0;
-          return (
-            <View key={i} style={{ alignItems: 'center', flex: 1 }}>
-              {day.minutes > 0 && (
-                <Text style={{ fontSize: 9, color: colors.onSurface, marginBottom: 2 }}>
-                  {day.minutes}m
-                </Text>
-              )}
-              <View
-                style={{
-                  width: 20,
-                  height: barHeight,
-                  backgroundColor: day.minutes > 0 ? colors.accent : colors.surfaceVariant,
-                  borderRadius: 4,
-                }}
-              />
-              <Text style={{ fontSize: 11, color: colors.onSurface, marginTop: 6 }}>{day.label}</Text>
-            </View>
-          );
-        })}
-      </View>
-    </View>
-  );
-}
-
 export default function JourneyScreen({ navigation }: Props) {
   const { theme } = useTheme();
   const c = theme.colors;
-  const [range, setRange] = useState<TimeRange>('week');
 
   const loadSessions = useSessionStore((s) => s.loadSessions);
   const loadStats = useSessionStore((s) => s.loadStats);
@@ -145,19 +38,6 @@ export default function JourneyScreen({ navigation }: Props) {
     loadStats();
   }, []);
 
-  // Filter sessions by range
-  const filteredSessions = useMemo(() => {
-    const startMs = getRangeStartMs(range);
-    return sessions.filter((s) => s.date >= startMs);
-  }, [sessions, range]);
-
-  const ranges: { key: TimeRange; label: string }[] = [
-    { key: 'week', label: 'Week' },
-    { key: 'month', label: 'Month' },
-    { key: '3months', label: '3 Months' },
-    { key: 'year', label: 'Year' },
-  ];
-
   const statCards: { label: string; value: string; color: string }[] = [
     { label: 'Total Time', value: formatDuration(stats.totalMinutes), color: '#4DAAAA' },
     { label: 'Day Streak', value: String(stats.currentStreak), color: '#C8954C' },
@@ -167,22 +47,22 @@ export default function JourneyScreen({ navigation }: Props) {
 
   type ListItem =
     | { type: 'stats' }
-    | { type: 'range' }
-    | { type: 'chart' }
+    | { type: 'heatmap' }
+    | { type: 'lineChart' }
     | { type: 'sessionsHeader' }
     | { type: 'session'; session: MeditationSession }
     | { type: 'empty' };
 
   const data: ListItem[] = [
     { type: 'stats' },
-    { type: 'range' },
-    { type: 'chart' },
+    { type: 'heatmap' },
+    { type: 'lineChart' },
     { type: 'sessionsHeader' },
   ];
 
-  if (filteredSessions.length > 0) {
-    // Show last 20 sessions
-    filteredSessions.slice(0, 20).forEach((session) => data.push({ type: 'session', session }));
+  const recentSessions = sessions.slice(0, 20);
+  if (recentSessions.length > 0) {
+    recentSessions.forEach((session) => data.push({ type: 'session', session }));
   } else {
     data.push({ type: 'empty' });
   }
@@ -227,36 +107,11 @@ export default function JourneyScreen({ navigation }: Props) {
           </View>
         );
 
-      case 'range':
-        return (
-          <View style={{ flexDirection: 'row', gap: 8, marginBottom: 16 }}>
-            {ranges.map((r) => (
-              <Pressable
-                key={r.key}
-                onPress={() => setRange(r.key)}
-                style={{
-                  paddingHorizontal: 14,
-                  paddingVertical: 8,
-                  borderRadius: 20,
-                  backgroundColor: range === r.key ? c.primaryContainer : c.surface,
-                }}
-              >
-                <Text
-                  style={{
-                    color: range === r.key ? c.onPrimary : c.onSurface,
-                    fontWeight: '600',
-                    fontSize: 13,
-                  }}
-                >
-                  {r.label}
-                </Text>
-              </Pressable>
-            ))}
-          </View>
-        );
+      case 'heatmap':
+        return <CalendarHeatmap sessions={sessions} />;
 
-      case 'chart':
-        return <ProgressChart sessions={filteredSessions} range={range} colors={c} />;
+      case 'lineChart':
+        return <DurationLineChart sessions={sessions} />;
 
       case 'sessionsHeader':
         return (
@@ -288,7 +143,7 @@ export default function JourneyScreen({ navigation }: Props) {
                 marginRight: 12,
               }}
             >
-              <Text style={{ fontSize: 16 }}>💧</Text>
+              <Text style={{ fontSize: 16 }}>🧘</Text>
             </View>
             <View style={{ flex: 1 }}>
               <Text style={{ color: c.onBackground, fontSize: 14 }}>
@@ -323,7 +178,6 @@ export default function JourneyScreen({ navigation }: Props) {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: c.background }}>
-      {/* Header */}
       <View style={{ flexDirection: 'row', alignItems: 'center', padding: 16 }}>
         <Pressable onPress={() => navigation.goBack()} hitSlop={8}>
           <Text style={{ fontSize: 24, color: c.onSurface }}>←</Text>
