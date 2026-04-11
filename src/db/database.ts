@@ -5,6 +5,7 @@ const DB_NAME = 'spiritlog.db';
 const CURRENT_VERSION = 1;
 
 let db: SQLite.SQLiteDatabase | null = null;
+let openingPromise: Promise<SQLite.SQLiteDatabase> | null = null;
 
 export async function getDatabase(): Promise<SQLite.SQLiteDatabase> {
   if (db) {
@@ -15,9 +16,15 @@ export async function getDatabase(): Promise<SQLite.SQLiteDatabase> {
       db = null;
     }
   }
-  db = await SQLite.openDatabaseAsync(DB_NAME);
-  await runMigrations(db);
-  return db;
+  // Prevent multiple concurrent re-opens
+  if (openingPromise) return openingPromise;
+  openingPromise = (async () => {
+    db = await SQLite.openDatabaseAsync(DB_NAME);
+    await runMigrations(db);
+    openingPromise = null;
+    return db;
+  })();
+  return openingPromise;
 }
 
 async function runMigrations(database: SQLite.SQLiteDatabase): Promise<void> {

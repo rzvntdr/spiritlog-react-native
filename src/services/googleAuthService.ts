@@ -10,6 +10,7 @@ try {
   isSuccessResponse = mod.isSuccessResponse;
   isNoSavedCredentialFoundResponse = mod.isNoSavedCredentialFoundResponse;
   GoogleSignin.configure({
+    webClientId: '718017583661-d3odflmrhnqdjlpr292mu3m23qfee98i.apps.googleusercontent.com',
     scopes: ['https://www.googleapis.com/auth/drive.appdata'],
   });
   isAvailable = true;
