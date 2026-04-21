@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect } from 'react';
 import { View, Text, Pressable, FlatList, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -9,15 +9,12 @@ import { useShallow } from 'zustand/react/shallow';
 import { useSessionStore } from '../stores/sessionStore';
 import { formatDuration } from '../utils/time';
 import PresetCard from '../components/preset/PresetCard';
-import ThemePicker from '../components/common/ThemePicker';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Home'>;
 
 export default function HomeScreen({ navigation }: Props) {
   const { theme } = useTheme();
   const c = theme.colors;
-  const [themePickerVisible, setThemePickerVisible] = useState(false);
-
   const loadPresets = usePresetStore((s) => s.loadPresets);
   const isPresetsLoaded = usePresetStore((s) => s.isLoaded);
   const favorites = usePresetStore(useShallow((s) => s.presets.filter((p) => p.isFavorite)));
@@ -85,7 +82,7 @@ export default function HomeScreen({ navigation }: Props) {
               justifyContent: 'space-around',
             }}
           >
-            <StatItem icon="💧" value={String(stats.thisWeek)} label="This Week" colors={c} />
+            <StatItem icon="🧘" value={String(stats.thisWeek)} label="This Week" colors={c} />
             <StatItem icon="🔥" value={String(stats.currentStreak)} label="Day Streak" colors={c} />
             <StatItem
               icon="⏱"
@@ -133,17 +130,11 @@ export default function HomeScreen({ navigation }: Props) {
           <Text style={{ fontSize: 14, color: c.onSurface }}>Create your meditation</Text>
         </View>
         <View style={{ flexDirection: 'row', gap: 14 }}>
-          <Pressable onPress={() => setThemePickerVisible(true)} hitSlop={8}>
-            <Text style={{ fontSize: 22, color: c.onSurface }}>🎨</Text>
-          </Pressable>
           <Pressable onPress={() => navigation.navigate('Journey')} hitSlop={8}>
             <Text style={{ fontSize: 22, color: c.onSurface }}>🕐</Text>
           </Pressable>
-          <Pressable onPress={() => navigation.navigate('Backup')} hitSlop={8}>
-            <Text style={{ fontSize: 22, color: c.onSurface }}>☁️</Text>
-          </Pressable>
-          <Pressable onPress={() => navigation.navigate('HowToUse')} hitSlop={8}>
-            <Text style={{ fontSize: 22, color: c.onSurface }}>ℹ️</Text>
+          <Pressable onPress={() => navigation.navigate('Settings')} hitSlop={8}>
+            <Text style={{ fontSize: 22, color: c.onSurface }}>⚙️</Text>
           </Pressable>
         </View>
       </View>
@@ -182,7 +173,6 @@ export default function HomeScreen({ navigation }: Props) {
         <Text style={{ color: c.onPrimary, fontSize: 16, fontWeight: '600' }}>+ Create Preset</Text>
       </Pressable>
 
-      <ThemePicker visible={themePickerVisible} onClose={() => setThemePickerVisible(false)} />
     </SafeAreaView>
   );
 }

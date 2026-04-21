@@ -9,6 +9,7 @@ import CreatePresetScreen from '../screens/CreatePresetScreen';
 import JourneyScreen from '../screens/JourneyScreen';
 import BackupScreen from '../screens/BackupScreen';
 import HowToUseScreen from '../screens/HowToUseScreen';
+import SettingsScreen from '../screens/SettingsScreen';
 
 export type RootStackParamList = {
   Home: undefined;
@@ -16,6 +17,7 @@ export type RootStackParamList = {
   CreatePreset: undefined;
   EditPreset: { presetId: string };
   Journey: undefined;
+  Settings: undefined;
   Backup: undefined;
   HowToUse: undefined;
 };
@@ -65,6 +67,7 @@ export default function AppNavigator() {
           options={{ animation: 'slide_from_bottom', presentation: 'modal' }}
         />
         <Stack.Screen name="Journey" component={JourneyScreen} />
+        <Stack.Screen name="Settings" component={SettingsScreen} />
         <Stack.Screen name="Backup" component={BackupScreen} />
         <Stack.Screen name="HowToUse" component={HowToUseScreen} />
       </Stack.Navigator>

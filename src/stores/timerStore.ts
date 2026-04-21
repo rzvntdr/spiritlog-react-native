@@ -19,6 +19,7 @@ interface TimerStoreState {
   pendingHaptic: boolean;
   /** Sound marker waiting for playback to finish */
   pendingSoundMarker: number | null;
+  hasStarted: boolean;
 
   // Actions
   startSession: (preset: PresetTimer) => void;
@@ -59,6 +60,7 @@ export const useTimerStore = create<TimerStoreState>((set, get) => ({
   pendingSoundId: null,
   pendingHaptic: false,
   pendingSoundMarker: null,
+  hasStarted: false,
 
   startSession: (preset) => {
     const elements = buildElements(preset);
@@ -77,7 +79,7 @@ export const useTimerStore = create<TimerStoreState>((set, get) => ({
 
   play: () => {
     engine.play();
-    set({ isPaused: false });
+    set({ isPaused: false, hasStarted: true });
   },
 
   pause: () => {
@@ -155,6 +157,7 @@ export const useTimerStore = create<TimerStoreState>((set, get) => ({
       pendingSoundId: null,
       pendingHaptic: false,
       pendingSoundMarker: null,
+      hasStarted: false,
     });
   },
 }));

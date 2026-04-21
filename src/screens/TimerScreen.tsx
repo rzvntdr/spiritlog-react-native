@@ -76,6 +76,7 @@ export default function TimerScreen({ navigation, route }: Props) {
   const clearPendingSoundMarker = useTimerStore((s) => s.clearPendingSoundMarker);
   const soundMarkerFinished = useTimerStore((s) => s.soundMarkerFinished);
   const getRemainingMs = useTimerStore((s) => s.getRemainingMs);
+  const hasStarted = useTimerStore((s) => s.hasStarted);
 
   const [saveDialogVisible, setSaveDialogVisible] = useState(false);
 
@@ -205,16 +206,13 @@ export default function TimerScreen({ navigation, route }: Props) {
     }
   }, [engineState.isComplete, isActive, pause]);
 
-  const handleStop = useCallback(() => {
-    stop();
-    soundEngine.stopIntervalSounds();
-    cancelMeditationNotification();
-    dismissOngoingNotification();
-    setSaveDialogVisible(true);
-  }, [stop]);
+  // Intercept swipe-back / hardware back button
+  useEffect(() => {
+    const unsubscribe = navigation.addListener('beforeRemove', (e) => {
+      if (!isActive || engineState.isComplete || !hasStarted) return;
 
-  const handleBack = useCallback(() => {
-    if (isActive && !engineState.isComplete) {
+      e.preventDefault();
+
       Alert.alert('End Meditation?', 'Your progress will be lost if you go back without saving.', [
         { text: 'Continue', style: 'cancel' },
         {
@@ -231,15 +229,25 @@ export default function TimerScreen({ navigation, route }: Props) {
             cancelMeditationNotification();
             dismissOngoingNotification();
             reset();
-            navigation.goBack();
+            navigation.dispatch(e.data.action);
           },
         },
       ]);
-    } else {
-      reset();
-      navigation.goBack();
-    }
-  }, [isActive, engineState.isComplete, stop, reset, navigation]);
+    });
+    return unsubscribe;
+  }, [navigation, isActive, engineState.isComplete, hasStarted, stop, reset]);
+
+  const handleStop = useCallback(() => {
+    stop();
+    soundEngine.stopIntervalSounds();
+    cancelMeditationNotification();
+    dismissOngoingNotification();
+    setSaveDialogVisible(true);
+  }, [stop]);
+
+  const handleBack = useCallback(() => {
+    navigation.goBack();
+  }, [navigation]);
 
   const handleSaveSession = useCallback(
     async (durationMinutes: number) => {
