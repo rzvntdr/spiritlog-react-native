@@ -4,6 +4,7 @@ import Slider from '@react-native-community/slider';
 import { useTheme } from '../../theme/ThemeContext';
 import { SOUNDS } from '../../types/sound';
 import { SoundConfig, SoundIntervalType } from '../../types/preset';
+import { soundEngine } from '../../services/soundEngine';
 
 interface Props {
   visible: boolean;
@@ -58,27 +59,47 @@ export default function IntervalSoundDialog({ visible, onClose, onAdd }: Props) 
       <View style={{ flex: 1, justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.5)', padding: 24 }}>
         <View style={{ backgroundColor: c.surface, borderRadius: 16, padding: 20 }}>
           <Text style={{ fontSize: 18, fontWeight: '700', color: c.onBackground, marginBottom: 16 }}>
-            Add Interval Sound
+            Add Phase Sound
           </Text>
 
           {/* Sound selector */}
-          <Text style={{ fontSize: 12, color: c.onSurface, marginBottom: 8 }}>Select Sound</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 16 }}>
+          <Text style={{ fontSize: 12, color: c.onSurface, marginBottom: 8 }}>Sound</Text>
+          <ScrollView style={{ maxHeight: 160, marginBottom: 16 }}>
             {SOUNDS.map((s) => (
               <Pressable
                 key={s.id}
                 onPress={() => setSoundId(s.id)}
                 style={{
-                  paddingHorizontal: 14,
-                  paddingVertical: 8,
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  padding: 12,
                   borderRadius: 8,
-                  backgroundColor: soundId === s.id ? c.primaryContainer : c.surfaceVariant,
-                  marginRight: 8,
+                  backgroundColor: soundId === s.id ? c.primaryContainer : 'transparent',
+                  marginBottom: 4,
                 }}
               >
-                <Text style={{ color: soundId === s.id ? c.onPrimary : c.onSurface, fontWeight: '600' }}>
+                <View
+                  style={{
+                    width: 20,
+                    height: 20,
+                    borderRadius: 10,
+                    borderWidth: 2,
+                    borderColor: soundId === s.id ? c.onPrimary : c.onSurface,
+                    justifyContent: 'center',
+                    alignItems: 'center',
+                    marginRight: 12,
+                  }}
+                >
+                  {soundId === s.id && (
+                    <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: c.onPrimary }} />
+                  )}
+                </View>
+                <Text style={{ flex: 1, color: soundId === s.id ? c.onPrimary : c.onBackground, fontSize: 16 }}>
                   {s.name}
                 </Text>
+                <Pressable hitSlop={8} onPress={() => soundEngine.playSound(s.id)}>
+                  <Text style={{ color: c.accent, fontSize: 16 }}>▶</Text>
+                </Pressable>
               </Pressable>
             ))}
           </ScrollView>

@@ -25,16 +25,18 @@ export interface DurationConfig {
   type: DurationType;
   durationMillis: number;
   name: string;
-  startSound: number | null;
-  endSound: number | null;
   soundConfigs: SoundConfig[];
 }
+
+export type PresetElement =
+  | { kind: 'sound'; soundId: number; name: string }
+  | ({ kind: 'duration' } & DurationConfig);
 
 export interface PresetTimer {
   id: string;
   name: string;
   description: string;
-  durations: DurationConfig[];
+  elements: PresetElement[];
   isFavorite: boolean;
   sortOrder: number;
   lastUsed: number;

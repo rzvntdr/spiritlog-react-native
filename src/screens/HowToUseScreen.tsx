@@ -15,7 +15,7 @@ export default function HowToUseScreen({ navigation }: Props) {
     { title: 'Create a Preset', body: 'Tap "+ Create Preset" to build your custom meditation with warm-up phases, timed sessions, and sounds.' },
     { title: 'Start Meditating', body: 'Tap any preset from the home screen to begin. The timer guides you through each phase.' },
     { title: 'Track Your Progress', body: 'After each session, save it to build your streak and see your journey over time.' },
-    { title: 'Customize Sounds', body: 'Add interval sounds (bells, chimes) that play during meditation to help maintain focus.' },
+    { title: 'Customize Sounds', body: 'Add phase sounds (bells, chimes, ambient) that play during meditation to help maintain focus.' },
     { title: 'Backup Your Data', body: 'Sign in with Google to keep your presets and session history safe in the cloud.' },
   ];
 

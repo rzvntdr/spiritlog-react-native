@@ -79,6 +79,7 @@ export default function TimerScreen({ navigation, route }: Props) {
   const hasStarted = useTimerStore((s) => s.hasStarted);
 
   const [saveDialogVisible, setSaveDialogVisible] = useState(false);
+  const isExitingRef = useRef(false);
 
   const tickRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const prevPhaseIndexRef = useRef(-1);
@@ -209,7 +210,7 @@ export default function TimerScreen({ navigation, route }: Props) {
   // Intercept swipe-back / hardware back button
   useEffect(() => {
     const unsubscribe = navigation.addListener('beforeRemove', (e) => {
-      if (!isActive || engineState.isComplete || !hasStarted) return;
+      if (!isActive || engineState.isComplete || !hasStarted || isExitingRef.current) return;
 
       e.preventDefault();
 
@@ -226,6 +227,7 @@ export default function TimerScreen({ navigation, route }: Props) {
           text: 'Discard',
           style: 'destructive',
           onPress: () => {
+            isExitingRef.current = true;
             cancelMeditationNotification();
             dismissOngoingNotification();
             reset();
@@ -270,6 +272,7 @@ export default function TimerScreen({ navigation, route }: Props) {
           }
         }
 
+        isExitingRef.current = true;
         setSaveDialogVisible(false);
         reset();
         navigation.goBack();
@@ -281,6 +284,7 @@ export default function TimerScreen({ navigation, route }: Props) {
   );
 
   const handleDiscard = useCallback(() => {
+    isExitingRef.current = true;
     setSaveDialogVisible(false);
     reset();
     navigation.goBack();
@@ -319,6 +323,7 @@ export default function TimerScreen({ navigation, route }: Props) {
           progress={engineState.phaseProgress}
           phaseName={engineState.phaseName}
           phaseType={engineState.phaseType}
+          isPlayingSound={engineState.currentElementKind === 'sound'}
         />
       </View>
 

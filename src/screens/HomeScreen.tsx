@@ -131,7 +131,7 @@ export default function HomeScreen({ navigation }: Props) {
         </View>
         <View style={{ flexDirection: 'row', gap: 14 }}>
           <Pressable onPress={() => navigation.navigate('Journey')} hitSlop={8}>
-            <Text style={{ fontSize: 22, color: c.onSurface }}>🕐</Text>
+            <Text style={{ fontSize: 22, color: c.onSurface }}>📊</Text>
           </Pressable>
           <Pressable onPress={() => navigation.navigate('Settings')} hitSlop={8}>
             <Text style={{ fontSize: 22, color: c.onSurface }}>⚙️</Text>

@@ -10,15 +10,10 @@ export async function seedDefaultPresets(): Promise<void> {
       id: generateUUID(),
       name: 'Quick 5',
       description: 'A quick 5-minute meditation',
-      durations: [
-        {
-          type: 'NORMAL',
-          durationMillis: 5 * 60 * 1000,
-          name: 'Meditation',
-          startSound: 1, // Bell
-          endSound: 1,
-          soundConfigs: [],
-        },
+      elements: [
+        { kind: 'sound', soundId: 1, name: 'Start Bell' },
+        { kind: 'duration', type: 'NORMAL', durationMillis: 5 * 60 * 1000, name: 'Meditation', soundConfigs: [] },
+        { kind: 'sound', soundId: 1, name: 'End Bell' },
       ],
       isFavorite: false,
       sortOrder: 0,
@@ -29,23 +24,11 @@ export async function seedDefaultPresets(): Promise<void> {
       id: generateUUID(),
       name: 'Basic 10',
       description: '30-second warm-up followed by 10-minute meditation',
-      durations: [
-        {
-          type: 'WARMUP',
-          durationMillis: 30 * 1000,
-          name: 'Warm-up',
-          startSound: 1,
-          endSound: null,
-          soundConfigs: [],
-        },
-        {
-          type: 'NORMAL',
-          durationMillis: 10 * 60 * 1000,
-          name: 'Meditation',
-          startSound: null,
-          endSound: 1,
-          soundConfigs: [],
-        },
+      elements: [
+        { kind: 'sound', soundId: 1, name: 'Start Bell' },
+        { kind: 'duration', type: 'WARMUP', durationMillis: 30 * 1000, name: 'Warm-up', soundConfigs: [] },
+        { kind: 'duration', type: 'NORMAL', durationMillis: 10 * 60 * 1000, name: 'Meditation', soundConfigs: [] },
+        { kind: 'sound', soundId: 1, name: 'End Bell' },
       ],
       isFavorite: false,
       sortOrder: 1,
@@ -56,21 +39,14 @@ export async function seedDefaultPresets(): Promise<void> {
       id: generateUUID(),
       name: 'Deep 20',
       description: '30-second warm-up + 20-minute deep meditation with random interval bells',
-      durations: [
+      elements: [
+        { kind: 'sound', soundId: 1, name: 'Start Bell' },
+        { kind: 'duration', type: 'WARMUP', durationMillis: 30 * 1000, name: 'Warm-up', soundConfigs: [] },
         {
-          type: 'WARMUP',
-          durationMillis: 30 * 1000,
-          name: 'Warm-up',
-          startSound: 1,
-          endSound: null,
-          soundConfigs: [],
-        },
-        {
+          kind: 'duration',
           type: 'NORMAL',
           durationMillis: 20 * 60 * 1000,
           name: 'Meditation',
-          startSound: null,
-          endSound: 1,
           soundConfigs: [
             {
               type: 'RANDOM_INTERVAL',
@@ -79,6 +55,7 @@ export async function seedDefaultPresets(): Promise<void> {
             },
           ],
         },
+        { kind: 'sound', soundId: 1, name: 'End Bell' },
       ],
       isFavorite: false,
       sortOrder: 2,
@@ -89,15 +66,10 @@ export async function seedDefaultPresets(): Promise<void> {
       id: generateUUID(),
       name: 'Open-ended',
       description: 'Meditate as long as you want — stop when you\'re ready',
-      durations: [
-        {
-          type: 'INFINITE',
-          durationMillis: 0,
-          name: 'Meditation',
-          startSound: 1,
-          endSound: 1,
-          soundConfigs: [],
-        },
+      elements: [
+        { kind: 'sound', soundId: 1, name: 'Start Bell' },
+        { kind: 'duration', type: 'INFINITE', durationMillis: 0, name: 'Meditation', soundConfigs: [] },
+        { kind: 'sound', soundId: 1, name: 'End Bell' },
       ],
       isFavorite: false,
       sortOrder: 3,
@@ -108,39 +80,16 @@ export async function seedDefaultPresets(): Promise<void> {
       id: generateUUID(),
       name: 'Multi-phase 30',
       description: 'Structured 30-minute session: warm-up, body scan, breath focus, open awareness',
-      durations: [
-        {
-          type: 'WARMUP',
-          durationMillis: 30 * 1000,
-          name: 'Warm-up',
-          startSound: 1,
-          endSound: null,
-          soundConfigs: [],
-        },
-        {
-          type: 'NORMAL',
-          durationMillis: 5 * 60 * 1000,
-          name: 'Body Scan',
-          startSound: 2, // Swoosh
-          endSound: null,
-          soundConfigs: [],
-        },
-        {
-          type: 'NORMAL',
-          durationMillis: 15 * 60 * 1000,
-          name: 'Breath Focus',
-          startSound: 2,
-          endSound: null,
-          soundConfigs: [],
-        },
-        {
-          type: 'NORMAL',
-          durationMillis: 10 * 60 * 1000,
-          name: 'Open Awareness',
-          startSound: 2,
-          endSound: 1,
-          soundConfigs: [],
-        },
+      elements: [
+        { kind: 'sound', soundId: 1, name: 'Start Bell' },
+        { kind: 'duration', type: 'WARMUP', durationMillis: 30 * 1000, name: 'Warm-up', soundConfigs: [] },
+        { kind: 'sound', soundId: 2, name: 'Transition' },
+        { kind: 'duration', type: 'NORMAL', durationMillis: 5 * 60 * 1000, name: 'Body Scan', soundConfigs: [] },
+        { kind: 'sound', soundId: 2, name: 'Transition' },
+        { kind: 'duration', type: 'NORMAL', durationMillis: 15 * 60 * 1000, name: 'Breath Focus', soundConfigs: [] },
+        { kind: 'sound', soundId: 2, name: 'Transition' },
+        { kind: 'duration', type: 'NORMAL', durationMillis: 10 * 60 * 1000, name: 'Open Awareness', soundConfigs: [] },
+        { kind: 'sound', soundId: 1, name: 'End Bell' },
       ],
       isFavorite: false,
       sortOrder: 4,

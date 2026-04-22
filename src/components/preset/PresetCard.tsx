@@ -3,7 +3,7 @@ import { View, Text, Pressable, Alert } from 'react-native';
 import { PresetTimer } from '../../types/preset';
 import { useTheme } from '../../theme/ThemeContext';
 import { formatPhaseDuration } from '../../utils/time';
-import { getPresetTotalDurationMs, getPhaseCount, hasInfinitePhase } from '../../utils/presetBuilder';
+import { getPresetTotalDurationMs, getPhaseCount, hasInfinitePhase, getDurationElements } from '../../utils/presetBuilder';
 import PhaseBadge from './PhaseBadge';
 
 interface Props {
@@ -66,7 +66,7 @@ export default function PresetCard({ preset, onPress, onToggleFavorite, onEdit, 
               {durationLabel} · {phaseCount} {phaseCount === 1 ? 'phase' : 'phases'}
             </Text>
             <View style={{ flexDirection: 'row', marginTop: 6 }}>
-              {preset.durations.map((phase, i) => (
+              {getDurationElements(preset).map((phase, i) => (
                 <PhaseBadge key={i} phase={phase} />
               ))}
             </View>

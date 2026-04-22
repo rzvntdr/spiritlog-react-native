@@ -3,13 +3,14 @@ import { DurationType } from '../types/preset';
 
 export interface TimerEngineState {
   currentElementIndex: number;
+  currentElementKind: 'sound' | 'duration' | null;
   displayTimeMs: number;
-  phaseElapsedMs: number; // elapsed in current phase (always counts up)
-  phaseProgress: number; // 0–1
+  phaseElapsedMs: number;
+  phaseProgress: number;
   phaseName: string;
   phaseType: DurationType | null;
   isComplete: boolean;
-  elapsedMeditationMs: number; // only duration elements count
+  elapsedMeditationMs: number;
   totalElements: number;
 }
 
@@ -77,17 +78,11 @@ export class TimerEngine {
   skipToNext(): TimerTickResult {
     let playSoundId: number | null = null;
 
-    // Play end sound of current element if it's a duration
-    const current = this.elements[this.currentIndex];
-    if (current?.kind === 'duration' && current.endSound) {
-      playSoundId = current.endSound;
-    }
-
     this.waitingForSound = false;
     this.currentIndex++;
     this.elapsedInCurrentMs = 0;
 
-    // Skip over any sound elements
+    // Skip over any sound elements, playing the last one
     while (this.currentIndex < this.elements.length && this.elements[this.currentIndex].kind === 'sound') {
       const soundEl = this.elements[this.currentIndex];
       if (soundEl.kind === 'sound') {
@@ -138,24 +133,13 @@ export class TimerEngine {
     }
 
     if (current.kind === 'duration') {
-      // First tick of this phase? Play start sound
-      if (this.elapsedInCurrentMs === 0 && deltaMs > 0 && current.startSound) {
-        playSoundId = current.startSound;
-      }
-
       this.elapsedInCurrentMs += deltaMs;
-
-      // Count toward total meditation time
       this.totalMeditationMs += deltaMs;
 
       const isInfinite = current.type === 'INFINITE';
       const targetMs = isInfinite ? MAX_INFINITE_MS : current.durationMs;
 
       if (!isInfinite && this.elapsedInCurrentMs >= targetMs) {
-        // Phase complete
-        if (current.endSound) {
-          playSoundId = current.endSound;
-        }
         this.currentIndex++;
         this.elapsedInCurrentMs = 0;
         phaseTransitioned = true;
@@ -172,6 +156,7 @@ export class TimerEngine {
     if (isComplete || !current) {
       return {
         currentElementIndex: this.currentIndex,
+        currentElementKind: null,
         displayTimeMs: 0,
         phaseElapsedMs: 0,
         phaseProgress: 1,
@@ -186,9 +171,10 @@ export class TimerEngine {
     if (current.kind === 'sound') {
       return {
         currentElementIndex: this.currentIndex,
+        currentElementKind: 'sound',
         displayTimeMs: 0,
         phaseElapsedMs: 0,
-        phaseProgress: this.waitingForSound ? 0.5 : 0,
+        phaseProgress: 0,
         phaseName: current.name,
         phaseType: null,
         isComplete: false,
@@ -220,6 +206,7 @@ export class TimerEngine {
 
     return {
       currentElementIndex: this.currentIndex,
+      currentElementKind: 'duration',
       displayTimeMs,
       phaseElapsedMs: this.elapsedInCurrentMs,
       phaseProgress,

@@ -6,6 +6,7 @@ import { buildMonthHeatmapData } from '../../utils/chartHelpers';
 
 interface Props {
   sessions: MeditationSession[];
+  presetNameMap: Map<string, string>;
 }
 
 const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
@@ -21,11 +22,12 @@ function getIntensityOpacity(minutes: number): number {
   return 1;
 }
 
-export default function CalendarHeatmap({ sessions }: Props) {
+export default function CalendarHeatmap({ sessions, presetNameMap }: Props) {
   const { theme } = useTheme();
   const c = theme.colors;
   const [currentMonth, setCurrentMonth] = useState(() => new Date());
   const [containerWidth, setContainerWidth] = useState(0);
+  const [selectedDay, setSelectedDay] = useState<number | null>(null);
 
   const onLayout = useCallback((e: LayoutChangeEvent) => {
     setContainerWidth(e.nativeEvent.layout.width);
@@ -39,6 +41,28 @@ export default function CalendarHeatmap({ sessions }: Props) {
     () => buildMonthHeatmapData(sessions, currentMonth),
     [sessions, currentMonth]
   );
+
+  const { sessionCountMap, presetNamesMap } = useMemo(() => {
+    const year = currentMonth.getFullYear();
+    const month = currentMonth.getMonth();
+    const startMs = new Date(year, month, 1).getTime();
+    const endMs = new Date(year, month + 1, 1).getTime();
+    const countMap = new Map<string, number>();
+    const namesMap = new Map<string, Set<string>>();
+    for (const s of sessions) {
+      if (s.date >= startMs && s.date < endMs) {
+        const d = new Date(s.date);
+        const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        countMap.set(key, (countMap.get(key) ?? 0) + 1);
+        if (!namesMap.has(key)) namesMap.set(key, new Set());
+        const name = s.presetId
+          ? (presetNameMap.get(s.presetId) ?? 'Deleted preset')
+          : 'Free session';
+        namesMap.get(key)!.add(name);
+      }
+    }
+    return { sessionCountMap: countMap, presetNamesMap: namesMap };
+  }, [sessions, currentMonth, presetNameMap]);
 
   const grid = useMemo(() => {
     const year = currentMonth.getFullYear();
@@ -69,10 +93,12 @@ export default function CalendarHeatmap({ sessions }: Props) {
   }, [currentMonth]);
 
   const prevMonth = () => {
+    setSelectedDay(null);
     setCurrentMonth((prev) => new Date(prev.getFullYear(), prev.getMonth() - 1, 1));
   };
 
   const nextMonth = () => {
+    setSelectedDay(null);
     setCurrentMonth((prev) => new Date(prev.getFullYear(), prev.getMonth() + 1, 1));
   };
 
@@ -99,6 +125,35 @@ export default function CalendarHeatmap({ sessions }: Props) {
         </Pressable>
       </View>
 
+      {/* Selected day info (always visible) */}
+      <View style={{ backgroundColor: c.surfaceVariant, borderRadius: 8, padding: 10, marginBottom: 8, height: 52, justifyContent: 'center' }}>
+        {selectedDay !== null ? (() => {
+          const key = dateKeyForDay(selectedDay);
+          const mins = heatmapData.get(key) ?? 0;
+          const count = sessionCountMap.get(key) ?? 0;
+          const names = [...(presetNamesMap.get(key) ?? [])];
+          return (
+            <>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                <Text style={{ color: c.onBackground, fontSize: 13, fontWeight: '600' }}>
+                  {MONTHS[currentMonth.getMonth()]} {selectedDay}, {currentMonth.getFullYear()}
+                </Text>
+                <Text style={{ color: c.accent, fontSize: 13, fontWeight: '600' }}>
+                  {mins} min · {count} {count === 1 ? 'session' : 'sessions'}
+                </Text>
+              </View>
+              {names.length > 0 && (
+                <Text style={{ color: c.onSurface, fontSize: 11, marginTop: 2 }} numberOfLines={1}>
+                  {names.join(', ')}
+                </Text>
+              )}
+            </>
+          );
+        })() : (
+          <Text style={{ color: c.onSurface, fontSize: 12 }}>Tap a day to see details</Text>
+        )}
+      </View>
+
       <View onLayout={onLayout} style={{ padding: PADDING }}>
         {/* Weekday headers */}
         {cellSize > 0 && (
@@ -122,9 +177,12 @@ export default function CalendarHeatmap({ sessions }: Props) {
                   const minutes = heatmapData.get(dateKeyForDay(day)) ?? 0;
                   const opacity = getIntensityOpacity(minutes);
 
+                  const isSelected = selectedDay === day;
+
                   return (
-                    <View
+                    <Pressable
                       key={colIdx}
+                      onPress={() => setSelectedDay(isSelected ? null : day)}
                       style={{
                         width: cellSize,
                         height: cellSize,
@@ -133,12 +191,14 @@ export default function CalendarHeatmap({ sessions }: Props) {
                         opacity: opacity > 0 ? opacity : 1,
                         justifyContent: 'center',
                         alignItems: 'center',
+                        borderWidth: isSelected ? 2 : 0,
+                        borderColor: isSelected ? c.onBackground : 'transparent',
                       }}
                     >
                       <Text style={{ fontSize: cellSize > 36 ? 11 : 9, color: opacity > 0.5 ? '#fff' : c.onSurface }}>
                         {day}
                       </Text>
-                    </View>
+                    </Pressable>
                   );
                 })}
               </View>

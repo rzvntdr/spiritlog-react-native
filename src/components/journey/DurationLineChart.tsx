@@ -1,27 +1,31 @@
-import React, { useMemo, useState, useCallback, useRef, useEffect } from 'react';
-import { View, Text, Pressable, ScrollView, LayoutChangeEvent, Platform } from 'react-native';
-import Svg, { Path, Line, Text as SvgText, Circle } from 'react-native-svg';
+import React, { useMemo, useState, useRef, useEffect } from 'react';
+import { View, Text, Pressable, ScrollView, Platform } from 'react-native';
+import Svg, { Path, Line, Text as SvgText, Circle, Rect } from 'react-native-svg';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import { useTheme } from '../../theme/ThemeContext';
 import { MeditationSession } from '../../types/session';
 
 interface Props {
   sessions: MeditationSession[];
+  presetNameMap: Map<string, string>;
 }
 
 const CHART_HEIGHT = 160;
 const TOP_PADDING = 20;
 const BOTTOM_PADDING = 30;
-const LEFT_PADDING = 36;
-const RIGHT_PADDING = 12;
-const POINT_SPACING = 12;
+const POINT_SPACING = 6;
+const Y_AXIS_WIDTH = 36;
+const RIGHT_PADDING = 8;
 
 function dateKey(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
-function formatShortDate(d: Date): string {
+function formatShortDate(d: Date, includeYear: boolean): string {
   const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  if (includeYear) {
+    return `${months[d.getMonth()]} ${d.getDate()} '${String(d.getFullYear()).slice(2)}`;
+  }
   return `${months[d.getMonth()]} ${d.getDate()}`;
 }
 
@@ -30,12 +34,10 @@ function formatPickerLabel(d: Date): string {
   return `${months[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`;
 }
 
-/** Get start of day (midnight) */
 function startOfDay(d: Date): Date {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate());
 }
 
-/** Count days between two dates (inclusive) */
 function daysBetween(from: Date, to: Date): number {
   const diffMs = startOfDay(to).getTime() - startOfDay(from).getTime();
   return Math.floor(diffMs / (24 * 60 * 60 * 1000)) + 1;
@@ -45,14 +47,15 @@ interface DayPoint {
   date: Date;
   label: string;
   minutes: number;
+  sessionCount: number;
+  presetNames: string[];
 }
 
-export default function DurationLineChart({ sessions }: Props) {
+export default function DurationLineChart({ sessions, presetNameMap }: Props) {
   const { theme } = useTheme();
   const c = theme.colors;
   const scrollRef = useRef<ScrollView>(null);
 
-  // Default range: start of current month to today
   const [fromDate, setFromDate] = useState(() => {
     const now = new Date();
     return new Date(now.getFullYear(), now.getMonth(), 1);
@@ -61,18 +64,27 @@ export default function DurationLineChart({ sessions }: Props) {
 
   const [showFromPicker, setShowFromPicker] = useState(false);
   const [showToPicker, setShowToPicker] = useState(false);
+  const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
 
-  // Build one data point per day
+  const spansMultipleYears = fromDate.getFullYear() !== toDate.getFullYear();
+
   const points: DayPoint[] = useMemo(() => {
-    // Build minute map for the range
     const fromMs = startOfDay(fromDate).getTime();
     const toMs = startOfDay(toDate).getTime() + 24 * 60 * 60 * 1000;
 
     const minuteMap = new Map<string, number>();
+    const countMap = new Map<string, number>();
+    const presetMap = new Map<string, Set<string>>();
     for (const s of sessions) {
       if (s.date >= fromMs && s.date < toMs) {
         const key = dateKey(new Date(s.date));
         minuteMap.set(key, (minuteMap.get(key) ?? 0) + s.duration);
+        countMap.set(key, (countMap.get(key) ?? 0) + 1);
+        if (!presetMap.has(key)) presetMap.set(key, new Set());
+        const name = s.presetId
+          ? (presetNameMap.get(s.presetId) ?? 'Deleted preset')
+          : 'Free session';
+        presetMap.get(key)!.add(name);
       }
     }
 
@@ -81,25 +93,26 @@ export default function DurationLineChart({ sessions }: Props) {
     for (let i = 0; i < totalDays; i++) {
       const d = new Date(startOfDay(fromDate));
       d.setDate(d.getDate() + i);
+      const key = dateKey(d);
       result.push({
         date: d,
-        label: formatShortDate(d),
-        minutes: minuteMap.get(dateKey(d)) ?? 0,
+        label: formatShortDate(d, spansMultipleYears),
+        minutes: minuteMap.get(key) ?? 0,
+        sessionCount: countMap.get(key) ?? 0,
+        presetNames: [...(presetMap.get(key) ?? [])],
       });
     }
     return result;
-  }, [sessions, fromDate, toDate]);
+  }, [sessions, fromDate, toDate, spansMultipleYears]);
 
   const maxMinutes = Math.max(...points.map((p) => p.minutes), 1);
 
-  // Determine label frequency based on total days
   const totalDays = points.length;
   const labelEvery = totalDays <= 14 ? 1 : totalDays <= 60 ? 7 : 30;
 
-  const chartWidth = LEFT_PADDING + RIGHT_PADDING + Math.max(points.length - 1, 0) * POINT_SPACING;
+  const chartWidth = RIGHT_PADDING + Math.max(points.length - 1, 0) * POINT_SPACING + RIGHT_PADDING;
   const svgHeight = CHART_HEIGHT + TOP_PADDING + BOTTOM_PADDING;
 
-  // Y-axis gridlines (0, 25%, 50%, 75%, 100% of max)
   const gridSteps = 4;
   const gridLines = Array.from({ length: gridSteps + 1 }, (_, i) => {
     const value = Math.round((maxMinutes / gridSteps) * i);
@@ -107,8 +120,7 @@ export default function DurationLineChart({ sessions }: Props) {
     return { value, y };
   });
 
-  // Build SVG path
-  const getX = (i: number) => LEFT_PADDING + i * POINT_SPACING;
+  const getX = (i: number) => RIGHT_PADDING + i * POINT_SPACING;
   const getY = (minutes: number) =>
     TOP_PADDING + CHART_HEIGHT - (minutes / maxMinutes) * CHART_HEIGHT;
 
@@ -125,17 +137,25 @@ export default function DurationLineChart({ sessions }: Props) {
     return `${linePath} L ${getX(points.length - 1)} ${baseline} L ${getX(0)} ${baseline} Z`;
   }, [linePath, points.length]);
 
-  // Scroll to right on mount / range change
   useEffect(() => {
     setTimeout(() => {
       scrollRef.current?.scrollToEnd({ animated: false });
     }, 50);
   }, [fromDate, toDate]);
 
+  const earliestSessionDate = useMemo(() => {
+    if (sessions.length === 0) return null;
+    const minDate = Math.min(...sessions.map((s) => s.date));
+    return startOfDay(new Date(minDate));
+  }, [sessions]);
+
   const onFromChange = (_: DateTimePickerEvent, date?: Date) => {
     setShowFromPicker(Platform.OS === 'ios');
     if (date) {
-      const d = startOfDay(date);
+      let d = startOfDay(date);
+      if (earliestSessionDate && d < earliestSessionDate) {
+        d = earliestSessionDate;
+      }
       if (d <= toDate) setFromDate(d);
     }
   };
@@ -153,6 +173,29 @@ export default function DurationLineChart({ sessions }: Props) {
       <Text style={{ fontSize: 14, fontWeight: '600', color: c.onBackground, marginBottom: 12 }}>
         Session Duration
       </Text>
+
+      {/* Selected day info (always visible) */}
+      <View style={{ backgroundColor: c.surfaceVariant, borderRadius: 8, padding: 10, marginBottom: 12, height: 52, justifyContent: 'center' }}>
+        {selectedIndex !== null && points[selectedIndex] ? (
+          <>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+              <Text style={{ color: c.onBackground, fontSize: 13, fontWeight: '600' }}>
+                {formatPickerLabel(points[selectedIndex].date)}
+              </Text>
+              <Text style={{ color: c.accent, fontSize: 13, fontWeight: '600' }}>
+                {points[selectedIndex].minutes} min · {points[selectedIndex].sessionCount} {points[selectedIndex].sessionCount === 1 ? 'session' : 'sessions'}
+              </Text>
+            </View>
+            {points[selectedIndex].presetNames.length > 0 && (
+              <Text style={{ color: c.onSurface, fontSize: 11, marginTop: 2 }} numberOfLines={1}>
+                {points[selectedIndex].presetNames.join(', ')}
+              </Text>
+            )}
+          </>
+        ) : (
+          <Text style={{ color: c.onSurface, fontSize: 12 }}>Tap a point to see details</Text>
+        )}
+      </View>
 
       {/* Date range pickers */}
       <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12, gap: 8 }}>
@@ -209,73 +252,96 @@ export default function DurationLineChart({ sessions }: Props) {
         />
       )}
 
-      {/* Chart */}
+      {/* Chart with fixed Y-axis */}
       {points.length > 0 ? (
-        <ScrollView
-          ref={scrollRef}
-          horizontal
-          showsHorizontalScrollIndicator={false}
-        >
-          <Svg width={chartWidth} height={svgHeight}>
-            {/* Y-axis grid lines + labels */}
+        <View style={{ flexDirection: 'row' }}>
+          {/* Fixed Y-axis */}
+          <Svg width={Y_AXIS_WIDTH} height={svgHeight}>
             {gridLines.map((g, i) => (
-              <React.Fragment key={i}>
+              <SvgText
+                key={i}
+                x={Y_AXIS_WIDTH - 4}
+                y={g.y + 4}
+                fontSize={9}
+                fill={c.onSurface}
+                textAnchor="end"
+              >
+                {g.value}
+              </SvgText>
+            ))}
+          </Svg>
+
+          {/* Scrollable chart area */}
+          <ScrollView
+            ref={scrollRef}
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            style={{ flex: 1 }}
+          >
+            <Svg width={chartWidth} height={svgHeight}>
+              {/* Grid lines */}
+              {gridLines.map((g, i) => (
                 <Line
-                  x1={LEFT_PADDING}
+                  key={i}
+                  x1={0}
                   y1={g.y}
-                  x2={chartWidth - RIGHT_PADDING}
+                  x2={chartWidth}
                   y2={g.y}
                   stroke={c.surfaceVariant}
                   strokeWidth={1}
                 />
-                <SvgText
-                  x={LEFT_PADDING - 6}
-                  y={g.y + 4}
-                  fontSize={9}
-                  fill={c.onSurface}
-                  textAnchor="end"
-                >
-                  {g.value}
-                </SvgText>
-              </React.Fragment>
-            ))}
+              ))}
 
-            {/* Area fill */}
-            <Path d={areaPath} fill={c.accent} opacity={0.15} />
+              {/* Area fill */}
+              <Path d={areaPath} fill={c.accent} opacity={0.15} />
 
-            {/* Line */}
-            <Path d={linePath} fill="none" stroke={c.accent} strokeWidth={2} />
+              {/* Line */}
+              <Path d={linePath} fill="none" stroke={c.accent} strokeWidth={1.5} />
 
-            {/* Data points for non-zero days */}
-            {points.map((p, i) =>
-              p.minutes > 0 ? (
-                <Circle
-                  key={i}
-                  cx={getX(i)}
-                  cy={getY(p.minutes)}
-                  r={3}
-                  fill={c.accent}
+              {/* Data points for non-zero days */}
+              {points.map((p, i) =>
+                p.minutes > 0 ? (
+                  <Circle
+                    key={i}
+                    cx={getX(i)}
+                    cy={getY(p.minutes)}
+                    r={selectedIndex === i ? 4 : 2}
+                    fill={selectedIndex === i ? c.onBackground : c.accent}
+                  />
+                ) : null
+              )}
+
+              {/* Touch targets */}
+              {points.map((p, i) => (
+                <Rect
+                  key={`tap-${i}`}
+                  x={getX(i) - POINT_SPACING / 2}
+                  y={TOP_PADDING}
+                  width={POINT_SPACING}
+                  height={CHART_HEIGHT}
+                  fill="transparent"
+                  onPress={() => setSelectedIndex(selectedIndex === i ? null : i)}
                 />
-              ) : null
-            )}
+              ))}
 
-            {/* X-axis labels */}
-            {points.map((p, i) =>
-              i % labelEvery === 0 ? (
-                <SvgText
-                  key={`label-${i}`}
-                  x={getX(i)}
-                  y={TOP_PADDING + CHART_HEIGHT + 16}
-                  fontSize={9}
-                  fill={c.onSurface}
-                  textAnchor="middle"
-                >
-                  {p.label}
-                </SvgText>
-              ) : null
-            )}
-          </Svg>
-        </ScrollView>
+              {/* X-axis labels */}
+              {points.map((p, i) =>
+                i % labelEvery === 0 ? (
+                  <SvgText
+                    key={`label-${i}`}
+                    x={getX(i)}
+                    y={TOP_PADDING + CHART_HEIGHT + 16}
+                    fontSize={8}
+                    fill={c.onSurface}
+                    textAnchor="middle"
+                  >
+                    {p.label}
+                  </SvgText>
+                ) : null
+              )}
+            </Svg>
+          </ScrollView>
+        </View>
       ) : (
         <Text style={{ color: c.onSurface, fontSize: 12, fontStyle: 'italic', textAlign: 'center', marginTop: 8 }}>
           No data for this period

@@ -1,23 +1,55 @@
 import { getDatabase } from './database';
-import { PresetTimer, DurationConfig } from '../types/preset';
+import { PresetTimer, PresetElement } from '../types/preset';
 
 interface PresetRow {
   id: string;
   name: string;
   description: string;
-  durations: string;
+  durations: string; // JSON column — stores PresetElement[] (or old DurationConfig[] for migration)
   is_favorite: number;
   sort_order: number;
   last_used: number;
   created_at: number;
 }
 
+function normalizeElements(raw: any[]): PresetElement[] {
+  if (raw.length === 0) return [];
+
+  // New format: already has 'kind' discriminator
+  if (raw[0].kind) return raw as PresetElement[];
+
+  // Old format: DurationConfig[] with startSound/endSound — expand to flat elements
+  const elements: PresetElement[] = [];
+  for (const d of raw) {
+    const startSound = d.startSound;
+    const endSound = d.endSound;
+
+    if (typeof startSound === 'number') {
+      elements.push({ kind: 'sound', soundId: startSound, name: `Start ${d.name}` });
+    }
+
+    elements.push({
+      kind: 'duration',
+      type: d.type,
+      durationMillis: d.durationMillis,
+      name: d.name,
+      soundConfigs: d.soundConfigs ?? [],
+    });
+
+    if (typeof endSound === 'number') {
+      elements.push({ kind: 'sound', soundId: endSound, name: `End ${d.name}` });
+    }
+  }
+  return elements;
+}
+
 function rowToPreset(row: PresetRow): PresetTimer {
+  const parsed = JSON.parse(row.durations) as any[];
   return {
     id: row.id,
     name: row.name,
     description: row.description,
-    durations: JSON.parse(row.durations) as DurationConfig[],
+    elements: normalizeElements(parsed),
     isFavorite: row.is_favorite === 1,
     sortOrder: row.sort_order,
     lastUsed: row.last_used,
@@ -51,7 +83,7 @@ export async function insertPreset(preset: PresetTimer): Promise<void> {
       preset.id,
       preset.name,
       preset.description,
-      JSON.stringify(preset.durations),
+      JSON.stringify(preset.elements),
       preset.isFavorite ? 1 : 0,
       preset.sortOrder,
       preset.lastUsed,
@@ -68,7 +100,7 @@ export async function updatePreset(preset: PresetTimer): Promise<void> {
     [
       preset.name,
       preset.description,
-      JSON.stringify(preset.durations),
+      JSON.stringify(preset.elements),
       preset.isFavorite ? 1 : 0,
       preset.sortOrder,
       preset.lastUsed,

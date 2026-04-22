@@ -8,8 +8,6 @@ export type MeditationElement =
       durationMs: number;
       name: string;
       soundConfigs: SoundConfig[];
-      startSound: number | null;
-      endSound: number | null;
     };
 
 export type PlaybackAction = 'play' | 'pause' | 'stop' | 'skip' | 'restart';

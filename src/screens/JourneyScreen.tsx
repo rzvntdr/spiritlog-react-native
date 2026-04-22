@@ -1,9 +1,10 @@
-import React, { useEffect, useCallback } from 'react';
+import React, { useEffect, useCallback, useMemo } from 'react';
 import { View, Text, Pressable, FlatList, ActivityIndicator, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/navigation';
 import { useTheme } from '../theme/ThemeContext';
+import { usePresetStore } from '../stores/presetStore';
 import { useSessionStore } from '../stores/sessionStore';
 import { formatDuration } from '../utils/time';
 import { MeditationSession } from '../types/session';
@@ -32,6 +33,15 @@ export default function JourneyScreen({ navigation }: Props) {
   const sessions = useSessionStore((s) => s.sessions);
   const stats = useSessionStore((s) => s.stats);
   const isLoaded = useSessionStore((s) => s.isLoaded);
+  const presets = usePresetStore((s) => s.presets);
+
+  const presetNameMap = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const p of presets) {
+      map.set(p.id, p.name);
+    }
+    return map;
+  }, [presets]);
 
   useEffect(() => {
     loadSessions();
@@ -108,10 +118,10 @@ export default function JourneyScreen({ navigation }: Props) {
         );
 
       case 'heatmap':
-        return <CalendarHeatmap sessions={sessions} />;
+        return <CalendarHeatmap sessions={sessions} presetNameMap={presetNameMap} />;
 
       case 'lineChart':
-        return <DurationLineChart sessions={sessions} />;
+        return <DurationLineChart sessions={sessions} presetNameMap={presetNameMap} />;
 
       case 'sessionsHeader':
         return (
