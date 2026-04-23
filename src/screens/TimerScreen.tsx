@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
-import { View, Text, Pressable, Alert, AppState, AppStateStatus } from 'react-native';
+import { View, Text, Pressable, Alert, AppState, AppStateStatus, Platform, Switch } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
@@ -11,6 +11,7 @@ import { usePresetStore } from '../stores/presetStore';
 import { useSessionStore } from '../stores/sessionStore';
 import { useSettingsStore } from '../stores/settingsStore';
 import { useBackupStore } from '../stores/backupStore';
+import { useAchievementStore } from '../stores/achievementStore';
 import { MeditationSession } from '../types/session';
 import { generateUUID } from '../utils/uuid';
 import { getPresetTotalDurationMs } from '../utils/presetBuilder';
@@ -25,6 +26,7 @@ import {
   showOngoingMeditationNotification,
   dismissOngoingNotification,
 } from '../services/notificationService';
+import * as Dnd from '../../modules/dnd';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Timer'>;
 
@@ -47,6 +49,9 @@ export default function TimerScreen({ navigation, route }: Props) {
   }, [screenAwake]);
 
   const hapticsEnabled = useSettingsStore((s) => s.hapticsEnabled);
+  const dndEnabled = useSettingsStore((s) => s.dndEnabled);
+  const setDndEnabled = useSettingsStore((s) => s.setDndEnabled);
+  const [dndActive, setDndActive] = useState(false);
 
   // Stores — use stable selector to avoid infinite re-render loops
   const preset = usePresetStore(
@@ -97,6 +102,9 @@ export default function TimerScreen({ navigation, route }: Props) {
       soundEngine.dispose();
       cancelMeditationNotification();
       dismissOngoingNotification();
+      if (useSettingsStore.getState().dndEnabled && Platform.OS === 'android') {
+        Dnd.disableDnd();
+      }
     };
   }, []);
 
@@ -132,6 +140,20 @@ export default function TimerScreen({ navigation, route }: Props) {
 
     return () => subscription.remove();
   }, [getRemainingMs]);
+
+  // Enable/disable DND based on play state
+  useEffect(() => {
+    if (!dndEnabled || Platform.OS !== 'android') return;
+    if (!isPaused && isActive) {
+      if (!dndActive && Dnd.isAccessGranted()) {
+        Dnd.enableDnd();
+        setDndActive(true);
+      }
+    } else if (dndActive) {
+      Dnd.disableDnd();
+      setDndActive(false);
+    }
+  }, [isPaused, isActive, dndEnabled, dndActive]);
 
   // Start/stop tick interval based on pause state
   useEffect(() => {
@@ -263,6 +285,8 @@ export default function TimerScreen({ navigation, route }: Props) {
         };
         await insertSession(session);
 
+        useAchievementStore.getState().triggerCheck({ type: 'session_saved', data: session });
+
         // Auto-backup after session if enabled and signed in
         const autoBackup = useSettingsStore.getState().autoBackupAfterSession;
         if (autoBackup) {
@@ -316,6 +340,93 @@ export default function TimerScreen({ navigation, route }: Props) {
         <View style={{ width: 24 }} />
       </View>
 
+      {/* DND Toggle */}
+      {Platform.OS === 'android' && (
+        <View style={{ marginHorizontal: 24, marginBottom: 12 }}>
+          <Pressable
+            onPress={() => {
+              if (!dndEnabled && !Dnd.isAccessGranted()) {
+                Alert.alert(
+                  'Permission Required',
+                  'SpiritLog needs Do Not Disturb access to silence notifications during meditation.',
+                  [
+                    { text: 'Cancel', style: 'cancel' },
+                    {
+                      text: 'Open Settings',
+                      onPress: () => {
+                        Dnd.requestAccess();
+                        const sub = AppState.addEventListener('change', (state) => {
+                          if (state === 'active') {
+                            sub.remove();
+                            if (Dnd.isAccessGranted()) {
+                              setDndEnabled(true);
+                            }
+                          }
+                        });
+                      },
+                    },
+                  ]
+                );
+                return;
+              }
+              setDndEnabled(!dndEnabled);
+            }}
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              backgroundColor: c.surface,
+              borderRadius: 14,
+              paddingVertical: 14,
+              paddingHorizontal: 18,
+            }}
+          >
+            <Text style={{ fontSize: 22, marginRight: 14 }}>{dndEnabled ? '🔕' : '🔔'}</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 15, fontWeight: '600', color: c.onBackground }}>
+                Do Not Disturb
+              </Text>
+              <Text style={{ fontSize: 12, color: c.onSurface, marginTop: 1 }}>
+                {dndEnabled
+                  ? dndActive ? 'Active — notifications silenced' : 'Will activate when timer runs'
+                  : 'Tap to enable during sessions'}
+              </Text>
+            </View>
+            <Switch
+              value={dndEnabled}
+              onValueChange={() => {
+                if (!dndEnabled && !Dnd.isAccessGranted()) {
+                  Alert.alert(
+                    'Permission Required',
+                    'SpiritLog needs Do Not Disturb access to silence notifications during meditation.',
+                    [
+                      { text: 'Cancel', style: 'cancel' },
+                      {
+                        text: 'Open Settings',
+                        onPress: () => {
+                          Dnd.requestAccess();
+                          const sub = AppState.addEventListener('change', (state) => {
+                            if (state === 'active') {
+                              sub.remove();
+                              if (Dnd.isAccessGranted()) {
+                                setDndEnabled(true);
+                              }
+                            }
+                          });
+                        },
+                      },
+                    ]
+                  );
+                  return;
+                }
+                setDndEnabled(!dndEnabled);
+              }}
+              trackColor={{ false: c.surfaceVariant, true: c.primaryContainer }}
+              thumbColor={dndEnabled ? c.primary : c.onSurface}
+            />
+          </Pressable>
+        </View>
+      )}
+
       {/* Timer Circle */}
       <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
         <TimerCircle
@@ -328,7 +439,7 @@ export default function TimerScreen({ navigation, route }: Props) {
       </View>
 
       {/* Phase Timeline */}
-      <View style={{ marginBottom: 24 }}>
+      <View style={{ marginBottom: 16 }}>
         <PhaseTimeline elements={elements} currentIndex={engineState.currentElementIndex} />
       </View>
 

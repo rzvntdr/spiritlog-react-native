@@ -9,6 +9,7 @@ import { usePresetStore } from '../stores/presetStore';
 import { useSessionStore } from '../stores/sessionStore';
 import { useSettingsStore } from '../stores/settingsStore';
 import { isGoogleSignInAvailable } from '../services/googleAuthService';
+import { useAchievementStore } from '../stores/achievementStore';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Backup'>;
 
@@ -52,6 +53,7 @@ export default function BackupScreen({ navigation }: Props) {
     }
     try {
       await signIn();
+      useAchievementStore.getState().triggerCheck({ type: 'signin' });
     } catch (e: any) {
       Alert.alert('Sign-In Failed', e.message || 'Could not sign in with Google.');
     }
@@ -67,6 +69,7 @@ export default function BackupScreen({ navigation }: Props) {
   const handleBackupNow = async () => {
     try {
       const { sizeKb } = await backupToDrive();
+      useAchievementStore.getState().triggerCheck({ type: 'backup_completed' });
       Alert.alert('Backup Complete', `Your data (${sizeKb} KB) has been saved to Google Drive.`);
     } catch (e: any) {
       Alert.alert('Backup Failed', e.message || 'An error occurred while backing up.');

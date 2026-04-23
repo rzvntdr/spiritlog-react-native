@@ -1,12 +1,16 @@
-import React from 'react';
-import { View, Text, Pressable, ScrollView, Switch } from 'react-native';
+import React, { useState, useCallback } from 'react';
+import { View, Text, Pressable, ScrollView, Switch, Platform, Alert, AppState } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/navigation';
 import { useTheme } from '../theme/ThemeContext';
 import { allThemes } from '../theme/themes';
 import { useSettingsStore } from '../stores/settingsStore';
+import { useAchievementStore } from '../stores/achievementStore';
+import { getAllAchievements } from '../data/achievements';
 import Constants from 'expo-constants';
+import * as Dnd from '../../modules/dnd';
+import { getDayName } from '../services/reminderService';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Settings'>;
 
@@ -18,6 +22,67 @@ export default function SettingsScreen({ navigation }: Props) {
   const setScreenAwake = useSettingsStore((s) => s.setScreenAwake);
   const hapticsEnabled = useSettingsStore((s) => s.hapticsEnabled);
   const setHapticsEnabled = useSettingsStore((s) => s.setHapticsEnabled);
+  const dndEnabled = useSettingsStore((s) => s.dndEnabled);
+  const setDndEnabled = useSettingsStore((s) => s.setDndEnabled);
+  const reminder = useSettingsStore((s) => s.reminder);
+  const achievementsEnabled = useSettingsStore((s) => s.achievementsEnabled);
+  const setAchievementsEnabled = useSettingsStore((s) => s.setAchievementsEnabled);
+
+  const [dndAccessGranted, setDndAccessGranted] = useState(() =>
+    Platform.OS === 'android' ? Dnd.isAccessGranted() : false
+  );
+
+  const handleDndToggle = useCallback((value: boolean) => {
+    if (Platform.OS !== 'android') return;
+
+    if (value && !Dnd.isAccessGranted()) {
+      Alert.alert(
+        'Permission Required',
+        'SpiritLog needs Do Not Disturb access to silence notifications during meditation. You\'ll be taken to system settings to grant this.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Open Settings',
+            onPress: () => {
+              Dnd.requestAccess();
+              const sub = AppState.addEventListener('change', (state) => {
+                if (state === 'active') {
+                  sub.remove();
+                  const granted = Dnd.isAccessGranted();
+                  setDndAccessGranted(granted);
+                  if (granted) {
+                    setDndEnabled(true);
+                  }
+                }
+              });
+            },
+          },
+        ]
+      );
+      return;
+    }
+
+    setDndEnabled(value);
+    if (value) {
+      useAchievementStore.getState().triggerCheck({ type: 'dnd_enabled' });
+    }
+  }, [setDndEnabled]);
+
+  const achievementUnlocked = useAchievementStore((s) => s.unlocked);
+  const achievementStats = React.useMemo(() => {
+    let total = 0;
+    let unlockedCount = 0;
+    for (const a of getAllAchievements()) {
+      if (a.kind === 'single') {
+        total += 1;
+        if (achievementUnlocked.get(a.id)?.has('single')) unlockedCount += 1;
+      } else {
+        total += 3;
+        unlockedCount += achievementUnlocked.get(a.id)?.size ?? 0;
+      }
+    }
+    return { total, unlockedCount };
+  }, [achievementUnlocked]);
 
   const appVersion = Constants.expoConfig?.version ?? '1.0.0';
 
@@ -93,7 +158,7 @@ export default function SettingsScreen({ navigation }: Props) {
             />
           </View>
 
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: Platform.OS === 'android' ? 16 : 0 }}>
             <View style={{ flex: 1, marginRight: 12 }}>
               <Text style={{ color: c.onBackground, fontSize: 14 }}>Haptic Feedback</Text>
               <Text style={{ color: c.onSurface, fontSize: 11 }}>Vibrate on timer events</Text>
@@ -105,7 +170,76 @@ export default function SettingsScreen({ navigation }: Props) {
               thumbColor={hapticsEnabled ? c.primary : c.onSurface}
             />
           </View>
+
+          {Platform.OS === 'android' && (
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+              <View style={{ flex: 1, marginRight: 12 }}>
+                <Text style={{ color: c.onBackground, fontSize: 14 }}>Do Not Disturb</Text>
+                <Text style={{ color: c.onSurface, fontSize: 11 }}>Silence notifications during meditation</Text>
+              </View>
+              <Switch
+                value={dndEnabled}
+                onValueChange={handleDndToggle}
+                trackColor={{ false: c.surfaceVariant, true: c.primaryContainer }}
+                thumbColor={dndEnabled ? c.primary : c.onSurface}
+              />
+            </View>
+          )}
         </View>
+
+        {/* Reminder Section */}
+        <Text style={{ fontSize: 13, fontWeight: '600', color: c.onSurface, marginBottom: 8, marginLeft: 4 }}>
+          REMINDER
+        </Text>
+        <Pressable
+          onPress={() => navigation.navigate('Reminder')}
+          style={{ backgroundColor: c.surface, borderRadius: 12, padding: 16, marginBottom: 24, flexDirection: 'row', alignItems: 'center' }}
+        >
+          <Text style={{ fontSize: 22, marginRight: 12 }}>🔔</Text>
+          <View style={{ flex: 1 }}>
+            <Text style={{ color: c.onBackground, fontSize: 14 }}>Daily Reminder</Text>
+            <Text style={{ color: c.onSurface, fontSize: 11 }}>
+              {reminder.enabled
+                ? `${reminder.hour.toString().padStart(2, '0')}:${reminder.minute.toString().padStart(2, '0')} · ${reminder.days.map(getDayName).join(', ')}`
+                : 'Off'}
+            </Text>
+          </View>
+          <Text style={{ color: c.onSurface, fontSize: 18 }}>›</Text>
+        </Pressable>
+
+        {/* Progress Section */}
+        <Text style={{ fontSize: 13, fontWeight: '600', color: c.onSurface, marginBottom: 8, marginLeft: 4 }}>
+          PROGRESS
+        </Text>
+        <View style={{ backgroundColor: c.surface, borderRadius: 12, padding: 16, marginBottom: achievementsEnabled ? 12 : 24 }}>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+            <View style={{ flex: 1, marginRight: 12 }}>
+              <Text style={{ color: c.onBackground, fontSize: 14 }}>Achievements</Text>
+              <Text style={{ color: c.onSurface, fontSize: 11 }}>Track milestones and unlock rewards</Text>
+            </View>
+            <Switch
+              value={achievementsEnabled}
+              onValueChange={setAchievementsEnabled}
+              trackColor={{ false: c.surfaceVariant, true: c.primaryContainer }}
+              thumbColor={achievementsEnabled ? c.primary : c.onSurface}
+            />
+          </View>
+        </View>
+        {achievementsEnabled && (
+          <Pressable
+            onPress={() => navigation.navigate('Achievements')}
+            style={{ backgroundColor: c.surface, borderRadius: 12, padding: 16, marginBottom: 24, flexDirection: 'row', alignItems: 'center' }}
+          >
+            <Text style={{ fontSize: 22, marginRight: 12 }}>🏆</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={{ color: c.onBackground, fontSize: 14 }}>View Achievements</Text>
+              <Text style={{ color: c.onSurface, fontSize: 11 }}>
+                {achievementStats.unlockedCount} / {achievementStats.total} unlocked
+              </Text>
+            </View>
+            <Text style={{ color: c.onSurface, fontSize: 18 }}>›</Text>
+          </Pressable>
+        )}
 
         {/* Backup Section */}
         <Text style={{ fontSize: 13, fontWeight: '600', color: c.onSurface, marginBottom: 8, marginLeft: 4 }}>

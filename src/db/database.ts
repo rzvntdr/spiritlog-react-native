@@ -1,8 +1,9 @@
 import * as SQLite from 'expo-sqlite';
 import { v1Migration } from './migrations/v1';
+import { v2Migration } from './migrations/v2';
 
 const DB_NAME = 'spiritlog.db';
-const CURRENT_VERSION = 1;
+const CURRENT_VERSION = 2;
 
 let db: SQLite.SQLiteDatabase | null = null;
 let openingPromise: Promise<SQLite.SQLiteDatabase> | null = null;
@@ -35,6 +36,11 @@ async function runMigrations(database: SQLite.SQLiteDatabase): Promise<void> {
 
   if (currentVersion < 1) {
     await v1Migration(database);
+  }
+  if (currentVersion < 2) {
+    await v2Migration(database);
+  }
+  if (currentVersion < CURRENT_VERSION) {
     await database.execAsync(`PRAGMA user_version = ${CURRENT_VERSION}`);
   }
 }

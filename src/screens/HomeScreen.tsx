@@ -7,6 +7,7 @@ import { useTheme } from '../theme/ThemeContext';
 import { usePresetStore } from '../stores/presetStore';
 import { useShallow } from 'zustand/react/shallow';
 import { useSessionStore } from '../stores/sessionStore';
+import { useSettingsStore } from '../stores/settingsStore';
 import { formatDuration } from '../utils/time';
 import PresetCard from '../components/preset/PresetCard';
 
@@ -24,6 +25,7 @@ export default function HomeScreen({ navigation }: Props) {
 
   const loadStats = useSessionStore((s) => s.loadStats);
   const stats = useSessionStore((s) => s.stats);
+  const achievementsEnabled = useSettingsStore((s) => s.achievementsEnabled);
 
   useEffect(() => {
     loadPresets();
@@ -133,6 +135,11 @@ export default function HomeScreen({ navigation }: Props) {
           <Pressable onPress={() => navigation.navigate('Journey')} hitSlop={8}>
             <Text style={{ fontSize: 22, color: c.onSurface }}>📊</Text>
           </Pressable>
+          {achievementsEnabled && (
+            <Pressable onPress={() => navigation.navigate('Achievements')} hitSlop={8}>
+              <Text style={{ fontSize: 22, color: c.onSurface }}>🏆</Text>
+            </Pressable>
+          )}
           <Pressable onPress={() => navigation.navigate('Settings')} hitSlop={8}>
             <Text style={{ fontSize: 22, color: c.onSurface }}>⚙️</Text>
           </Pressable>

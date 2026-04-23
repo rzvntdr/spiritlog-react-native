@@ -104,8 +104,7 @@ export default function IntervalSoundDialog({ visible, onClose, onAdd }: Props) 
             ))}
           </ScrollView>
 
-          {/* Interval Type */}
-          <Text style={{ fontSize: 12, color: c.onSurface, marginBottom: 8 }}>Interval Type</Text>
+          <Text style={{ fontSize: 12, color: c.onSurface, marginBottom: 8 }}>Sound Type</Text>
           <View style={{ flexDirection: 'row', marginBottom: 16, gap: 8 }}>
             {typeOptions.map((opt) => (
               <Pressable

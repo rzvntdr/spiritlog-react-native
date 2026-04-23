@@ -6,6 +6,7 @@ import DraggableFlatList, { RenderItemParams, ScaleDecorator } from 'react-nativ
 import { RootStackParamList } from '../navigation/navigation';
 import { useTheme } from '../theme/ThemeContext';
 import { usePresetStore } from '../stores/presetStore';
+import { useAchievementStore } from '../stores/achievementStore';
 import { PresetTimer, DurationConfig, DurationType, SoundConfig, PresetElement } from '../types/preset';
 import { getSoundById } from '../types/sound';
 import { generateUUID } from '../utils/uuid';
@@ -181,6 +182,7 @@ export default function CreatePresetScreen({ navigation, route }: Props) {
         await updatePreset(preset);
       } else {
         await createPreset(preset);
+        useAchievementStore.getState().triggerCheck({ type: 'preset_created' });
       }
       navigation.goBack();
     } catch (e: any) {
@@ -212,16 +214,19 @@ export default function CreatePresetScreen({ navigation, route }: Props) {
             style={{
               backgroundColor: isActive ? c.surfaceVariant : c.surface,
               borderRadius: 8,
-              paddingVertical: 8,
-              paddingHorizontal: 12,
+              paddingVertical: 10,
+              paddingHorizontal: 14,
               marginBottom: 6,
               flexDirection: 'row',
               alignItems: 'center',
+              justifyContent: 'center',
             }}
           >
-            <Text style={{ fontSize: 16, color: c.onSurface, marginRight: 10, opacity: 0.5 }}>≡</Text>
-            <Text style={{ fontSize: 14, marginRight: 8 }}>🔔</Text>
-            <Text style={{ flex: 1, fontSize: 13, color: c.onSurface }}>
+            <Pressable onLongPress={drag} disabled={isActive} hitSlop={12} style={{ paddingRight: 12 }}>
+              <Text style={{ fontSize: 20, color: c.onSurface, opacity: 0.4 }}>≡</Text>
+            </Pressable>
+            <Text style={{ fontSize: 14, marginRight: 6 }}>🔔</Text>
+            <Text style={{ flex: 1, fontSize: 13, color: c.onSurface, fontWeight: '500' }}>
               {item.name} · {sound?.name ?? 'Unknown'}
             </Text>
             <Pressable onPress={() => removeElement(index)} hitSlop={8}>
@@ -239,8 +244,8 @@ export default function CreatePresetScreen({ navigation, route }: Props) {
       <ScaleDecorator>
         <View style={{ backgroundColor: isActive ? c.surfaceVariant : c.surface, borderRadius: 12, padding: 14, marginBottom: 6 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-            <Pressable onLongPress={drag} disabled={isActive} hitSlop={8} style={{ marginRight: 8 }}>
-              <Text style={{ fontSize: 16, color: c.onSurface, opacity: 0.5 }}>≡</Text>
+            <Pressable onLongPress={drag} disabled={isActive} hitSlop={12} style={{ paddingRight: 10 }}>
+              <Text style={{ fontSize: 20, color: c.onSurface, opacity: 0.4 }}>≡</Text>
             </Pressable>
             <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: typeColor, justifyContent: 'center', alignItems: 'center', marginRight: 12 }}>
               <Text style={{ fontSize: 16, color: '#fff' }}>⏱</Text>

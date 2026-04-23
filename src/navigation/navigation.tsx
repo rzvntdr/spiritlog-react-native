@@ -10,6 +10,9 @@ import JourneyScreen from '../screens/JourneyScreen';
 import BackupScreen from '../screens/BackupScreen';
 import HowToUseScreen from '../screens/HowToUseScreen';
 import SettingsScreen from '../screens/SettingsScreen';
+import ReminderScreen from '../screens/ReminderScreen';
+import AchievementsScreen from '../screens/AchievementsScreen';
+import AchievementToast from '../components/achievement/AchievementToast';
 
 export type RootStackParamList = {
   Home: undefined;
@@ -20,6 +23,8 @@ export type RootStackParamList = {
   Settings: undefined;
   Backup: undefined;
   HowToUse: undefined;
+  Reminder: undefined;
+  Achievements: undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -70,7 +75,10 @@ export default function AppNavigator() {
         <Stack.Screen name="Settings" component={SettingsScreen} />
         <Stack.Screen name="Backup" component={BackupScreen} />
         <Stack.Screen name="HowToUse" component={HowToUseScreen} />
+        <Stack.Screen name="Reminder" component={ReminderScreen} />
+        <Stack.Screen name="Achievements" component={AchievementsScreen} />
       </Stack.Navigator>
+      <AchievementToast />
     </NavigationContainer>
   );
 }
