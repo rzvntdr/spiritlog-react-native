@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { View, Text, Pressable, Alert, AppState, AppStateStatus, Platform, Switch } from 'react-native';
+import Slider from '@react-native-community/slider';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
@@ -23,10 +24,9 @@ import { soundEngine } from '../services/soundEngine';
 import {
   scheduleMeditationComplete,
   cancelMeditationNotification,
-  showOngoingMeditationNotification,
-  dismissOngoingNotification,
 } from '../services/notificationService';
 import * as Dnd from '../../modules/dnd';
+import * as MeditationService from '../../modules/meditationService';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Timer'>;
 
@@ -51,16 +51,16 @@ export default function TimerScreen({ navigation, route }: Props) {
   const hapticsEnabled = useSettingsStore((s) => s.hapticsEnabled);
   const dndEnabled = useSettingsStore((s) => s.dndEnabled);
   const setDndEnabled = useSettingsStore((s) => s.setDndEnabled);
+  const ambientVolume = useSettingsStore((s) => s.ambientVolume);
+  const setAmbientVolume = useSettingsStore((s) => s.setAmbientVolume);
   const [dndActive, setDndActive] = useState(false);
 
   // Stores — use stable selector to avoid infinite re-render loops
   const preset = usePresetStore(
     useCallback((s) => s.presets.find((p) => p.id === presetId), [presetId])
   );
-  const markUsed = usePresetStore((s) => s.markUsed);
   const insertSession = useSessionStore((s) => s.insertSession);
 
-  const startSession = useTimerStore((s) => s.startSession);
   const play = useTimerStore((s) => s.play);
   const pause = useTimerStore((s) => s.pause);
   const stop = useTimerStore((s) => s.stop);
@@ -89,24 +89,32 @@ export default function TimerScreen({ navigation, route }: Props) {
   const tickRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const prevPhaseIndexRef = useRef(-1);
   const appStateRef = useRef(AppState.currentState);
+  const dndActiveRef = useRef(dndActive);
+  dndActiveRef.current = dndActive;
 
-  // Initialize sound engine + session on mount
+  // Initialize sound engine + session. Depends on presetId so it re-runs if the
+  // screen is reused with a different preset (e.g. navigate() mid-swipe-back animation).
   useEffect(() => {
     soundEngine.init();
-    if (preset && !isActive) {
-      startSession(preset);
-      markUsed(preset.id);
+    const currentPreset = usePresetStore.getState().presets.find((p) => p.id === presetId);
+    if (currentPreset) {
+      useTimerStore.getState().startSession(currentPreset);
+      usePresetStore.getState().markUsed(currentPreset.id);
     }
     return () => {
       if (tickRef.current) clearInterval(tickRef.current);
       soundEngine.dispose();
       cancelMeditationNotification();
-      dismissOngoingNotification();
-      if (useSettingsStore.getState().dndEnabled && Platform.OS === 'android') {
+      MeditationService.stop();
+      // Disable DND only if WE turned it on (tracked via dndActive),
+      // regardless of the current preference value. Otherwise DND stays
+      // stuck on the OS when the user toggles the preference off mid-session.
+      if (dndActiveRef.current && Platform.OS === 'android') {
         Dnd.disableDnd();
       }
+      useTimerStore.getState().reset();
     };
-  }, []);
+  }, [presetId]);
 
   // Keep refs for values used in AppState handler to avoid re-registering the listener
   const isActiveRef = useRef(isActive);
@@ -116,24 +124,19 @@ export default function TimerScreen({ navigation, route }: Props) {
   isPausedRef.current = isPaused;
   presetRef.current = preset;
 
-  // Handle app backgrounding / foregrounding
+  // Schedule a fallback completion notification when going to background.
+  // The foreground service handles the persistent ongoing notification.
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (nextState: AppStateStatus) => {
       if (appStateRef.current.match(/active/) && nextState.match(/inactive|background/)) {
-        // Going to background — schedule notification if timer is running
         if (isActiveRef.current && !isPausedRef.current) {
           const remaining = getRemainingMs();
           if (remaining !== null && remaining > 0) {
             scheduleMeditationComplete(remaining);
           }
-          if (presetRef.current) {
-            showOngoingMeditationNotification(presetRef.current.name);
-          }
         }
       } else if (nextState === 'active') {
-        // Returning to foreground — cancel scheduled notification (timer will handle completion)
         cancelMeditationNotification();
-        dismissOngoingNotification();
       }
       appStateRef.current = nextState;
     });
@@ -141,15 +144,18 @@ export default function TimerScreen({ navigation, route }: Props) {
     return () => subscription.remove();
   }, [getRemainingMs]);
 
-  // Enable/disable DND based on play state
+  // Enable/disable DND based on play state.
+  // The condition for DND to be ON is: dndEnabled (preference) && playing && active.
+  // For any other state, if we previously turned DND on (dndActive), turn it off.
+  // Tracking dndActive separately from dndEnabled lets the user toggle the preference
+  // mid-session without leaving DND stuck on.
   useEffect(() => {
-    if (!dndEnabled || Platform.OS !== 'android') return;
-    if (!isPaused && isActive) {
-      if (!dndActive && Dnd.isAccessGranted()) {
-        Dnd.enableDnd();
-        setDndActive(true);
-      }
-    } else if (dndActive) {
+    if (Platform.OS !== 'android') return;
+    const shouldBeActive = dndEnabled && !isPaused && isActive;
+    if (shouldBeActive && !dndActive && Dnd.isAccessGranted()) {
+      Dnd.enableDnd();
+      setDndActive(true);
+    } else if (!shouldBeActive && dndActive) {
       Dnd.disableDnd();
       setDndActive(false);
     }
@@ -225,9 +231,83 @@ export default function TimerScreen({ navigation, route }: Props) {
   useEffect(() => {
     if (engineState.isComplete && isActive) {
       pause();
+      MeditationService.stop();
       setSaveDialogVisible(true);
     }
   }, [engineState.isComplete, isActive, pause]);
+
+  // Foreground service: start when user first hits play, stop on cleanup.
+  // Updates pushed every second so the notification timer counts down.
+  useEffect(() => {
+    if (!hasStarted || Platform.OS !== 'android' || !preset) return;
+
+    const presetTotalMs = getPresetTotalDurationMs(preset);
+
+    const buildState = (): MeditationService.MeditationState => {
+      const store = useTimerStore.getState();
+      const remaining = store.getRemainingMs() ?? 0;
+      const state = store.engineState;
+      const els = store.elements;
+      return {
+        presetName: preset.name,
+        phaseName: state.phaseName || preset.name,
+        isPaused: store.isPaused,
+        remainingMs: remaining,
+        totalMs: presetTotalMs,
+        canSkip: state.currentElementIndex < els.length - 1,
+      };
+    };
+
+    MeditationService.start(buildState());
+    const interval = setInterval(() => {
+      MeditationService.update(buildState());
+    }, 1000);
+
+    return () => {
+      clearInterval(interval);
+      MeditationService.stop();
+    };
+  }, [hasStarted, preset]);
+
+  // Push immediate update when pause-state or phase changes (don't wait for interval tick)
+  useEffect(() => {
+    if (!hasStarted || Platform.OS !== 'android' || !preset) return;
+    const store = useTimerStore.getState();
+    const remaining = store.getRemainingMs() ?? 0;
+    const totalMs = getPresetTotalDurationMs(preset);
+    MeditationService.update({
+      presetName: preset.name,
+      phaseName: engineState.phaseName || preset.name,
+      isPaused,
+      remainingMs: remaining,
+      totalMs,
+      canSkip: engineState.currentElementIndex < elements.length - 1,
+    });
+  }, [isPaused, engineState.currentElementIndex, engineState.phaseName, hasStarted, preset, elements.length]);
+
+  // Listen for notification button presses
+  useEffect(() => {
+    const subs = [
+      MeditationService.addActionListener('restart', () => {
+        useTimerStore.getState().restartCurrent();
+      }),
+      MeditationService.addActionListener('pausePlay', () => {
+        const store = useTimerStore.getState();
+        if (store.isPaused) store.play(); else store.pause();
+      }),
+      MeditationService.addActionListener('stop', () => {
+        useTimerStore.getState().stop();
+        soundEngine.stopIntervalSounds();
+        cancelMeditationNotification();
+        MeditationService.stop();
+        setSaveDialogVisible(true);
+      }),
+      MeditationService.addActionListener('skip', () => {
+        useTimerStore.getState().skipToNext();
+      }),
+    ];
+    return () => subs.forEach((s) => s?.remove());
+  }, []);
 
   // Intercept swipe-back / hardware back button
   useEffect(() => {
@@ -251,7 +331,7 @@ export default function TimerScreen({ navigation, route }: Props) {
           onPress: () => {
             isExitingRef.current = true;
             cancelMeditationNotification();
-            dismissOngoingNotification();
+            MeditationService.stop();
             reset();
             navigation.dispatch(e.data.action);
           },
@@ -265,7 +345,7 @@ export default function TimerScreen({ navigation, route }: Props) {
     stop();
     soundEngine.stopIntervalSounds();
     cancelMeditationNotification();
-    dismissOngoingNotification();
+    MeditationService.stop();
     setSaveDialogVisible(true);
   }, [stop]);
 
@@ -323,6 +403,11 @@ export default function TimerScreen({ navigation, route }: Props) {
   }
 
   const presetTotalMinutes = Math.round(getPresetTotalDurationMs(preset) / 60000);
+
+  const currentEl = elements[engineState.currentElementIndex];
+  const hasAmbient =
+    currentEl?.kind === 'duration' &&
+    currentEl.soundConfigs.some((sc) => sc.type === 'AMBIENT');
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: c.background }}>
@@ -437,6 +522,32 @@ export default function TimerScreen({ navigation, route }: Props) {
           isPlayingSound={engineState.currentElementKind === 'sound'}
         />
       </View>
+
+      {/* Ambient volume slider — visible only when current phase has ambient sound */}
+      {hasAmbient && (
+        <View style={{ marginHorizontal: 24, marginBottom: 8 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 2 }}>
+            <Text style={{ fontSize: 16, marginRight: 8 }}>🔉</Text>
+            <Text style={{ flex: 1, fontSize: 13, color: c.onSurface }}>Ambient Volume</Text>
+            <Text style={{ fontSize: 13, fontWeight: '600', color: c.onBackground }}>
+              {Math.round(ambientVolume * 100)}%
+            </Text>
+          </View>
+          <Slider
+            minimumValue={0.05}
+            maximumValue={1}
+            step={0.05}
+            value={ambientVolume}
+            onValueChange={(v) => {
+              setAmbientVolume(v);
+              soundEngine.setAmbientVolume(v);
+            }}
+            minimumTrackTintColor={c.primary}
+            maximumTrackTintColor={c.surfaceVariant}
+            thumbTintColor={c.primary}
+          />
+        </View>
+      )}
 
       {/* Phase Timeline */}
       <View style={{ marginBottom: 16 }}>

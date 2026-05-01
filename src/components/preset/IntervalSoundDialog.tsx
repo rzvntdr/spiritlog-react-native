@@ -2,17 +2,18 @@ import React, { useState } from 'react';
 import { View, Text, Pressable, ScrollView, Modal } from 'react-native';
 import Slider from '@react-native-community/slider';
 import { useTheme } from '../../theme/ThemeContext';
-import { SOUNDS } from '../../types/sound';
+import { EFFECT_SOUNDS, AMBIENT_SOUNDS } from '../../types/sound';
 import { SoundConfig, SoundIntervalType } from '../../types/preset';
 import { soundEngine } from '../../services/soundEngine';
 
 interface Props {
   visible: boolean;
   onClose: () => void;
-  onAdd: (config: SoundConfig) => void;
+  onSave: (config: SoundConfig) => void;
+  initialConfig?: SoundConfig;
 }
 
-export default function IntervalSoundDialog({ visible, onClose, onAdd }: Props) {
+export default function IntervalSoundDialog({ visible, onClose, onSave, initialConfig }: Props) {
   const { theme } = useTheme();
   const c = theme.colors;
   const [soundId, setSoundId] = useState(1);
@@ -20,16 +21,32 @@ export default function IntervalSoundDialog({ visible, onClose, onAdd }: Props) 
   const [fixedInterval, setFixedInterval] = useState(30); // seconds
   const [minInterval, setMinInterval] = useState(10); // seconds
   const [maxInterval, setMaxInterval] = useState(60); // seconds
+  const soundList = intervalType === 'AMBIENT' ? AMBIENT_SOUNDS : EFFECT_SOUNDS;
 
   React.useEffect(() => {
     if (visible) {
-      setSoundId(1);
-      setIntervalType('FIXED_INTERVAL');
-      setFixedInterval(30);
-      setMinInterval(10);
-      setMaxInterval(60);
+      if (initialConfig) {
+        setIntervalType(initialConfig.type);
+        setSoundId(initialConfig.soundId);
+        if (initialConfig.type === 'FIXED_INTERVAL') {
+          setFixedInterval((initialConfig.params as { intervalMillis: number }).intervalMillis / 1000);
+        } else if (initialConfig.type === 'RANDOM_INTERVAL') {
+          const p = initialConfig.params as { minIntervalMillis: number; maxIntervalMillis: number };
+          setMinInterval(p.minIntervalMillis / 1000);
+          setMaxInterval(p.maxIntervalMillis / 1000);
+        }
+      } else {
+        setIntervalType('FIXED_INTERVAL');
+        setSoundId(EFFECT_SOUNDS[0]?.id ?? 1);
+        setFixedInterval(30);
+        setMinInterval(10);
+        setMaxInterval(60);
+      }
+    } else {
+      soundEngine.stopPreview();
     }
   }, [visible]);
+
 
   const handleAdd = () => {
     let config: SoundConfig;
@@ -44,7 +61,7 @@ export default function IntervalSoundDialog({ visible, onClose, onAdd }: Props) 
     } else {
       config = { type: 'AMBIENT', soundId, params: { volume: 0.5 } };
     }
-    onAdd(config);
+    onSave(config);
     onClose();
   };
 
@@ -59,13 +76,13 @@ export default function IntervalSoundDialog({ visible, onClose, onAdd }: Props) 
       <View style={{ flex: 1, justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.5)', padding: 24 }}>
         <View style={{ backgroundColor: c.surface, borderRadius: 16, padding: 20 }}>
           <Text style={{ fontSize: 18, fontWeight: '700', color: c.onBackground, marginBottom: 16 }}>
-            Add Phase Sound
+            {initialConfig ? 'Edit Sound' : 'Add Sound'}
           </Text>
 
           {/* Sound selector */}
           <Text style={{ fontSize: 12, color: c.onSurface, marginBottom: 8 }}>Sound</Text>
           <ScrollView style={{ maxHeight: 160, marginBottom: 16 }}>
-            {SOUNDS.map((s) => (
+            {soundList.map((s) => (
               <Pressable
                 key={s.id}
                 onPress={() => setSoundId(s.id)}
@@ -97,7 +114,7 @@ export default function IntervalSoundDialog({ visible, onClose, onAdd }: Props) 
                 <Text style={{ flex: 1, color: soundId === s.id ? c.onPrimary : c.onBackground, fontSize: 16 }}>
                   {s.name}
                 </Text>
-                <Pressable hitSlop={8} onPress={() => soundEngine.playSound(s.id)}>
+                <Pressable hitSlop={8} onPress={() => soundEngine.playPreview(s.id)}>
                   <Text style={{ color: c.accent, fontSize: 16 }}>▶</Text>
                 </Pressable>
               </Pressable>
@@ -109,7 +126,15 @@ export default function IntervalSoundDialog({ visible, onClose, onAdd }: Props) 
             {typeOptions.map((opt) => (
               <Pressable
                 key={opt.type}
-                onPress={() => setIntervalType(opt.type)}
+                onPress={() => {
+                  setIntervalType(opt.type);
+                  // Reset soundId to the first valid sound for the new type
+                  if (opt.type === 'AMBIENT') {
+                    setSoundId(AMBIENT_SOUNDS[0]?.id ?? 7);
+                  } else {
+                    setSoundId(EFFECT_SOUNDS[0]?.id ?? 1);
+                  }
+                }}
                 style={{
                   flex: 1,
                   paddingVertical: 10,
@@ -194,11 +219,9 @@ export default function IntervalSoundDialog({ visible, onClose, onAdd }: Props) 
 
           {/* Ambient info */}
           {intervalType === 'AMBIENT' && (
-            <View style={{ backgroundColor: c.surfaceVariant, borderRadius: 8, padding: 12, marginBottom: 16 }}>
-              <Text style={{ color: c.onSurface, textAlign: 'center' }}>
-                Loops continuously during the phase. Other sounds play on top.
-              </Text>
-            </View>
+            <Text style={{ fontSize: 11, color: c.onSurface, textAlign: 'center', marginBottom: 16 }}>
+              Loops continuously. Volume is adjustable during the session.
+            </Text>
           )}
 
           {/* Actions */}
@@ -207,7 +230,7 @@ export default function IntervalSoundDialog({ visible, onClose, onAdd }: Props) 
               <Text style={{ color: c.primary, fontWeight: '600' }}>Cancel</Text>
             </Pressable>
             <Pressable onPress={handleAdd} style={{ backgroundColor: c.primaryContainer, borderRadius: 8, paddingHorizontal: 16, paddingVertical: 10 }}>
-              <Text style={{ color: c.onPrimary, fontWeight: '600' }}>Add Sound</Text>
+              <Text style={{ color: c.onPrimary, fontWeight: '600' }}>{initialConfig ? 'Save' : 'Add Sound'}</Text>
             </Pressable>
           </View>
         </View>

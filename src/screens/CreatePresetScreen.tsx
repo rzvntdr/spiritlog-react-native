@@ -14,7 +14,7 @@ import { formatPhaseDuration } from '../utils/time';
 import AddElementSheet from '../components/preset/AddElementSheet';
 import DurationEditor from '../components/preset/DurationEditor';
 import SoundPickerDialog from '../components/preset/SoundPickerDialog';
-import SoundConfigDialog from '../components/preset/SoundConfigDialog';
+import IntervalSoundDialog from '../components/preset/IntervalSoundDialog';
 
 type BuilderElement =
   | { kind: 'sound'; id: string; name: string; soundId: number }
@@ -55,10 +55,12 @@ export default function CreatePresetScreen({ navigation, route }: Props) {
   const [addElementVisible, setAddElementVisible] = useState(false);
   const [durationEditorVisible, setDurationEditorVisible] = useState(false);
   const [soundPickerVisible, setSoundPickerVisible] = useState(false);
-  const [soundConfigVisible, setSoundConfigVisible] = useState(false);
+  const [intervalSoundVisible, setIntervalSoundVisible] = useState(false);
 
   const [editingElementIndex, setEditingElementIndex] = useState<number | null>(null);
   const [newDurationType, setNewDurationType] = useState<DurationType>('NORMAL');
+  const [editingPhaseIndex, setEditingPhaseIndex] = useState<number | null>(null);
+  const [editingSoundIndex, setEditingSoundIndex] = useState<number | null>(null);
 
   useEffect(() => {
     if (existingPreset) {
@@ -136,22 +138,30 @@ export default function CreatePresetScreen({ navigation, route }: Props) {
     }
   };
 
-  const handleSaveSoundConfig = (soundConfigs: SoundConfig[]) => {
-    if (editingElementIndex !== null) {
-      setElements((prev) =>
-        prev.map((e, i) => {
-          if (i === editingElementIndex && e.kind === 'duration') {
-            return { ...e, config: { ...e.config, soundConfigs } };
-          }
-          return e;
-        })
-      );
-    }
-  };
-
   const removeElement = useCallback((index: number) => {
     setElements((prev) => prev.filter((_, i) => i !== index));
   }, []);
+
+  const handleRemovePhaseSound = useCallback((phaseIndex: number, soundIndex: number) => {
+    setElements((prev) =>
+      prev.map((e, i) => {
+        if (i !== phaseIndex || e.kind !== 'duration') return e;
+        return { ...e, config: { ...e.config, soundConfigs: e.config.soundConfigs.filter((_, si) => si !== soundIndex) } };
+      })
+    );
+  }, []);
+
+  const handleSavePhaseSound = useCallback((config: SoundConfig) => {
+    setElements((prev) =>
+      prev.map((e, i) => {
+        if (i !== editingPhaseIndex || e.kind !== 'duration') return e;
+        const sounds = editingSoundIndex !== null
+          ? e.config.soundConfigs.map((sc, si) => si === editingSoundIndex ? config : sc)
+          : [...e.config.soundConfigs, config];
+        return { ...e, config: { ...e.config, soundConfigs: sounds } };
+      })
+    );
+  }, [editingPhaseIndex, editingSoundIndex]);
 
   const handleSave = async () => {
     const presetElements: PresetElement[] = elements.map((el): PresetElement => {
@@ -199,6 +209,13 @@ export default function CreatePresetScreen({ navigation, route }: Props) {
     editingElementIndex !== null && elements[editingElementIndex]?.kind === 'sound'
       ? elements[editingElementIndex] as BuilderElement & { kind: 'sound' }
       : null;
+
+  const editingPhaseSound =
+    editingPhaseIndex !== null &&
+    editingSoundIndex !== null &&
+    elements[editingPhaseIndex]?.kind === 'duration'
+      ? (elements[editingPhaseIndex] as BuilderElement & { kind: 'duration' }).config.soundConfigs[editingSoundIndex]
+      : undefined;
 
   const renderItem = useCallback(({ item, drag, isActive, getIndex }: RenderItemParams<BuilderElement>) => {
     const index = getIndex() ?? 0;
@@ -268,43 +285,54 @@ export default function CreatePresetScreen({ navigation, route }: Props) {
             </Pressable>
           </View>
 
-          {/* Phase Sounds button */}
-          <Pressable
-            onPress={() => { setEditingElementIndex(index); setSoundConfigVisible(true); }}
-            style={{
-              marginTop: 10,
-              marginLeft: 56,
-              backgroundColor: c.surfaceVariant,
-              borderRadius: 8,
-              paddingVertical: 8,
-              paddingHorizontal: 12,
-              flexDirection: 'row',
-              alignItems: 'center',
-              alignSelf: 'flex-start',
-            }}
-          >
-            <Text style={{ fontSize: 13, marginRight: 6 }}>🎵</Text>
-            <Text style={{ color: c.onBackground, fontSize: 13, fontWeight: '500' }}>
-              {cfg.soundConfigs.length > 0
-                ? `Phase Sounds (${cfg.soundConfigs.length})`
-                : 'Phase Sounds'}
-            </Text>
-          </Pressable>
-
-          {/* Inline sound config tags */}
-          {cfg.soundConfigs.length > 0 && (
-            <View style={{ marginTop: 6, marginLeft: 56, flexDirection: 'row', flexWrap: 'wrap', gap: 4 }}>
-              {cfg.soundConfigs.map((sc, i) => (
-                <View key={i} style={{ backgroundColor: c.background, borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3 }}>
-                  <Text style={{ fontSize: 11, color: c.onSurface }}>{getPhaseSoundLabel(sc)}</Text>
-                </View>
-              ))}
-            </View>
-          )}
+          {/* Inline phase sounds */}
+          <View style={{ marginTop: 10, marginLeft: 56 }}>
+            {cfg.soundConfigs.map((sc, si) => (
+              <View
+                key={si}
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  backgroundColor: c.surfaceVariant,
+                  borderRadius: 8,
+                  paddingHorizontal: 10,
+                  paddingVertical: 7,
+                  marginBottom: 4,
+                }}
+              >
+                <Text style={{ fontSize: 13, flex: 1, color: c.onBackground }}>{getPhaseSoundLabel(sc)}</Text>
+                <Pressable
+                  hitSlop={8}
+                  onPress={() => { setEditingPhaseIndex(index); setEditingSoundIndex(si); setIntervalSoundVisible(true); }}
+                  style={{ marginRight: 10 }}
+                >
+                  <Text style={{ fontSize: 14, color: c.primary }}>✏</Text>
+                </Pressable>
+                <Pressable hitSlop={8} onPress={() => handleRemovePhaseSound(index, si)}>
+                  <Text style={{ color: c.error, fontSize: 16 }}>⊖</Text>
+                </Pressable>
+              </View>
+            ))}
+            <Pressable
+              onPress={() => { setEditingPhaseIndex(index); setEditingSoundIndex(null); setIntervalSoundVisible(true); }}
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                alignSelf: 'flex-start',
+                paddingVertical: 6,
+                paddingHorizontal: 10,
+                backgroundColor: c.surfaceVariant,
+                borderRadius: 8,
+                marginTop: cfg.soundConfigs.length > 0 ? 2 : 0,
+              }}
+            >
+              <Text style={{ fontSize: 13, color: c.primary, fontWeight: '600' }}>+ Add sound</Text>
+            </Pressable>
+          </View>
         </View>
       </ScaleDecorator>
     );
-  }, [c, removeElement]);
+  }, [c, removeElement, handleRemovePhaseSound]);
 
   const listHeader = useMemo(() => (
     <View style={{ padding: 16 }}>
@@ -457,14 +485,12 @@ export default function CreatePresetScreen({ navigation, route }: Props) {
         title={editingElementIndex !== null ? 'Edit Sound' : 'Add Sound'}
       />
 
-      {editingDurationElement && (
-        <SoundConfigDialog
-          visible={soundConfigVisible}
-          onClose={() => { setSoundConfigVisible(false); setEditingElementIndex(null); }}
-          onSave={handleSaveSoundConfig}
-          phase={editingDurationElement.config}
-        />
-      )}
+      <IntervalSoundDialog
+        visible={intervalSoundVisible}
+        onClose={() => { setIntervalSoundVisible(false); setEditingPhaseIndex(null); setEditingSoundIndex(null); }}
+        onSave={handleSavePhaseSound}
+        initialConfig={editingPhaseSound}
+      />
     </SafeAreaView>
   );
 }

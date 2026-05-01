@@ -111,7 +111,7 @@ export default function SoundConfigDialog({ visible, onClose, onSave, phase }: P
       <IntervalSoundDialog
         visible={addIntervalVisible}
         onClose={() => setAddIntervalVisible(false)}
-        onAdd={(config) => setIntervalSounds((prev) => [...prev, config])}
+        onSave={(config) => setIntervalSounds((prev) => [...prev, config])}
       />
     </Modal>
   );
