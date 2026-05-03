@@ -39,9 +39,12 @@ export default function TimerScreen({ navigation, route }: Props) {
 
   // Keep screen awake during meditation
   const screenAwake = useSettingsStore((s) => s.screenAwake);
+  const setScreenAwake = useSettingsStore((s) => s.setScreenAwake);
   useEffect(() => {
     if (screenAwake) {
       activateKeepAwakeAsync('timer');
+    } else {
+      deactivateKeepAwake('timer');
     }
     return () => {
       deactivateKeepAwake('timer');
@@ -161,17 +164,19 @@ export default function TimerScreen({ navigation, route }: Props) {
     }
   }, [isPaused, isActive, dndEnabled, dndActive]);
 
-  // Start/stop tick interval based on pause state
+  // Start/stop tick interval based on pause state.
+  // Sound scheduling for the current phase is owned by the native service;
+  // we just tell it to pause/resume in step with the timer.
   useEffect(() => {
     if (!isPaused && isActive) {
       tickRef.current = setInterval(tick, TICK_INTERVAL);
-      soundEngine.resumeAmbient();
+      if (Platform.OS === 'android') MeditationService.resumeSoundSchedule();
     } else {
       if (tickRef.current) {
         clearInterval(tickRef.current);
         tickRef.current = null;
       }
-      if (isPaused) soundEngine.pauseAmbient();
+      if (isPaused && Platform.OS === 'android') MeditationService.pauseSoundSchedule();
     }
     return () => {
       if (tickRef.current) clearInterval(tickRef.current);
@@ -196,26 +201,42 @@ export default function TimerScreen({ navigation, route }: Props) {
     }
   }, [pendingSoundMarker, clearPendingSoundMarker, soundMarkerFinished]);
 
-  // Start/stop interval sounds when phase changes
+  // Push the per-phase sound schedule to the native service whenever the
+  // phase changes. The service handles timing + playback in native land so
+  // sounds keep firing when JS is suspended in the background.
   useEffect(() => {
+    if (Platform.OS !== 'android') return;
     const idx = engineState.currentElementIndex;
     if (idx === prevPhaseIndexRef.current) return;
     prevPhaseIndexRef.current = idx;
 
     const currentEl = elements[idx];
     if (currentEl?.kind === 'duration' && currentEl.soundConfigs.length > 0) {
-      soundEngine.startIntervalSounds(currentEl.soundConfigs);
+      const entries = currentEl.soundConfigs.map((sc) => {
+        if (sc.type === 'FIXED_INTERVAL') {
+          return {
+            type: 'FIXED_INTERVAL' as const,
+            soundId: sc.soundId,
+            intervalMs: (sc.params as { intervalMillis: number }).intervalMillis,
+          };
+        }
+        if (sc.type === 'RANDOM_INTERVAL') {
+          const p = sc.params as { minIntervalMillis: number; maxIntervalMillis: number };
+          return {
+            type: 'RANDOM_INTERVAL' as const,
+            soundId: sc.soundId,
+            minIntervalMs: p.minIntervalMillis,
+            maxIntervalMs: p.maxIntervalMillis,
+          };
+        }
+        return { type: 'AMBIENT' as const, soundId: sc.soundId };
+      });
+      MeditationService.setAmbientVolume(useSettingsStore.getState().ambientVolume);
+      MeditationService.setSoundSchedule(entries);
     } else {
-      soundEngine.stopIntervalSounds();
+      MeditationService.clearSoundSchedule();
     }
   }, [engineState.currentElementIndex, elements]);
-
-  // Tick interval sounds alongside the timer (use phaseElapsedMs which always counts up)
-  useEffect(() => {
-    if (!isPaused && isActive && engineState.phaseType) {
-      soundEngine.tick(engineState.phaseElapsedMs);
-    }
-  }, [engineState.phaseElapsedMs, isPaused, isActive, engineState.phaseType]);
 
   // Handle haptic feedback
   useEffect(() => {
@@ -259,6 +280,37 @@ export default function TimerScreen({ navigation, route }: Props) {
     };
 
     MeditationService.start(buildState());
+
+    // Push the schedule for the current phase. The phase-change effect already
+    // ran (on mount) when the service wasn't running yet, so its schedule push
+    // was dropped. Re-push it now that the service is alive.
+    const store = useTimerStore.getState();
+    const idx = store.engineState.currentElementIndex;
+    const currentEl = store.elements[idx];
+    if (currentEl?.kind === 'duration' && currentEl.soundConfigs.length > 0) {
+      const entries = currentEl.soundConfigs.map((sc) => {
+        if (sc.type === 'FIXED_INTERVAL') {
+          return {
+            type: 'FIXED_INTERVAL' as const,
+            soundId: sc.soundId,
+            intervalMs: (sc.params as { intervalMillis: number }).intervalMillis,
+          };
+        }
+        if (sc.type === 'RANDOM_INTERVAL') {
+          const p = sc.params as { minIntervalMillis: number; maxIntervalMillis: number };
+          return {
+            type: 'RANDOM_INTERVAL' as const,
+            soundId: sc.soundId,
+            minIntervalMs: p.minIntervalMillis,
+            maxIntervalMs: p.maxIntervalMillis,
+          };
+        }
+        return { type: 'AMBIENT' as const, soundId: sc.soundId };
+      });
+      MeditationService.setAmbientVolume(useSettingsStore.getState().ambientVolume);
+      MeditationService.setSoundSchedule(entries);
+    }
+
     const interval = setInterval(() => {
       MeditationService.update(buildState());
     }, 1000);
@@ -297,8 +349,8 @@ export default function TimerScreen({ navigation, route }: Props) {
       }),
       MeditationService.addActionListener('stop', () => {
         useTimerStore.getState().stop();
-        soundEngine.stopIntervalSounds();
         cancelMeditationNotification();
+        MeditationService.clearSoundSchedule();
         MeditationService.stop();
         setSaveDialogVisible(true);
       }),
@@ -343,8 +395,8 @@ export default function TimerScreen({ navigation, route }: Props) {
 
   const handleStop = useCallback(() => {
     stop();
-    soundEngine.stopIntervalSounds();
     cancelMeditationNotification();
+    MeditationService.clearSoundSchedule();
     MeditationService.stop();
     setSaveDialogVisible(true);
   }, [stop]);
@@ -379,7 +431,7 @@ export default function TimerScreen({ navigation, route }: Props) {
         isExitingRef.current = true;
         setSaveDialogVisible(false);
         reset();
-        navigation.goBack();
+        navigation.navigate('Home');
       } catch (e: any) {
         Alert.alert('Save Error', e?.message ?? 'Failed to save session');
       }
@@ -391,7 +443,7 @@ export default function TimerScreen({ navigation, route }: Props) {
     isExitingRef.current = true;
     setSaveDialogVisible(false);
     reset();
-    navigation.goBack();
+    navigation.navigate('Home');
   }, [reset, navigation]);
 
   if (!preset) {
@@ -512,6 +564,39 @@ export default function TimerScreen({ navigation, route }: Props) {
         </View>
       )}
 
+      {/* Keep Screen Awake Toggle */}
+      <View style={{ marginHorizontal: 24, marginBottom: 12 }}>
+        <Pressable
+          onPress={() => setScreenAwake(!screenAwake)}
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            backgroundColor: c.surface,
+            borderRadius: 14,
+            paddingVertical: 14,
+            paddingHorizontal: 18,
+          }}
+        >
+          <Text style={{ fontSize: 22, marginRight: 14 }}>{screenAwake ? '☀️' : '🌙'}</Text>
+          <View style={{ flex: 1 }}>
+            <Text style={{ fontSize: 15, fontWeight: '600', color: c.onBackground }}>
+              Keep Screen Awake
+            </Text>
+            <Text style={{ fontSize: 12, color: c.onSurface, marginTop: 1 }}>
+              {screenAwake
+                ? 'Screen stays on during the session'
+                : 'Screen will turn off normally'}
+            </Text>
+          </View>
+          <Switch
+            value={screenAwake}
+            onValueChange={setScreenAwake}
+            trackColor={{ false: c.surfaceVariant, true: c.primaryContainer }}
+            thumbColor={screenAwake ? c.primary : c.onSurface}
+          />
+        </Pressable>
+      </View>
+
       {/* Timer Circle */}
       <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
         <TimerCircle
@@ -540,7 +625,8 @@ export default function TimerScreen({ navigation, route }: Props) {
             value={ambientVolume}
             onValueChange={(v) => {
               setAmbientVolume(v);
-              soundEngine.setAmbientVolume(v);
+              if (Platform.OS === 'android') MeditationService.setAmbientVolume(v);
+              else soundEngine.setAmbientVolume(v);
             }}
             minimumTrackTintColor={c.primary}
             maximumTrackTintColor={c.surfaceVariant}

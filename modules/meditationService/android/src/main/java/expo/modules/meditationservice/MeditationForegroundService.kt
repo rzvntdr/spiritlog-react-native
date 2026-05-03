@@ -8,15 +8,26 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.media.AudioAttributes
+import android.media.MediaPlayer
 import android.os.Build
+import android.os.Handler
 import android.os.IBinder
-import android.support.v4.media.MediaMetadataCompat
-import android.support.v4.media.session.MediaSessionCompat
-import android.support.v4.media.session.PlaybackStateCompat
+import android.os.Looper
+import android.os.PowerManager
+import android.os.SystemClock
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
-import androidx.media.app.NotificationCompat.MediaStyle
+import kotlin.random.Random
 
+/**
+ * Foreground service that owns the meditation session lifecycle:
+ * - Persistent ongoing notification (timer + Restart/Pause/Stop/Skip actions)
+ * - WakeLock to keep CPU active while session runs
+ * - Native scheduling and playback of interval/random/ambient sounds via
+ *   Handler + MediaPlayer. This is the source of truth for sound playback —
+ *   it runs even when JS is suspended in the background.
+ */
 class MeditationForegroundService : Service() {
 
   companion object {
@@ -38,20 +49,65 @@ class MeditationForegroundService : Service() {
     @Volatile
     var moduleListener: ((String) -> Unit)? = null
 
+    @Volatile
+    var instance: MeditationForegroundService? = null
+
     fun emitAction(action: String) {
       moduleListener?.invoke(action)
     }
+
+    private const val WAKE_LOCK_TIMEOUT_MS = 60L * 60 * 1000
+
+    /** Map JS sound IDs to raw-resource names. Mirrors `src/types/sound.ts`.
+     *  Resolved at runtime via `getIdentifier` because the resources live in the
+     *  main app's res/raw, not the module's, so we can't reference R.raw directly.
+     */
+    fun resourceNameForSoundId(soundId: Int): String? = when (soundId) {
+      1 -> "bell"
+      2 -> "swoosh"
+      3 -> "drone"
+      4 -> "bird_sing"
+      5 -> "bark"
+      6 -> "distorted_rar"
+      7 -> "ambient_rain"
+      8 -> "ambient_ocean"
+      9 -> "ambient_forest"
+      else -> null
+    }
   }
 
-  private var mediaSession: MediaSessionCompat? = null
+  data class ScheduleEntry(
+    val type: String,           // "FIXED_INTERVAL", "RANDOM_INTERVAL", "AMBIENT"
+    val soundId: Int,
+    val intervalMs: Long,       // FIXED only
+    val minIntervalMs: Long,    // RANDOM only
+    val maxIntervalMs: Long     // RANDOM only
+  )
+
+  private inner class IntervalTracker(val schedule: ScheduleEntry) {
+    var nextFireUptimeMs: Long = SystemClock.uptimeMillis() + computeNextDelay(schedule)
+    var pausedRemainingMs: Long? = null
+  }
+
+  private var wakeLock: PowerManager.WakeLock? = null
+  private val soundHandler = Handler(Looper.getMainLooper())
+  private val intervalTrackers = mutableListOf<IntervalTracker>()
+  private var ambientPlayer: MediaPlayer? = null
+  private var ambientVolume: Float = 0.5f
+  private var schedulePaused: Boolean = false
 
   override fun onBind(intent: Intent?): IBinder? = null
 
   override fun onCreate() {
     super.onCreate()
+    instance = this
     ensureChannel()
-    mediaSession = MediaSessionCompat(this, "MeditationSession").apply {
-      isActive = true
+    val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
+    wakeLock = powerManager.newWakeLock(
+      PowerManager.PARTIAL_WAKE_LOCK,
+      "SpiritLog:MeditationServiceWakeLock"
+    ).apply {
+      setReferenceCounted(false)
     }
   }
 
@@ -68,12 +124,16 @@ class MeditationForegroundService : Service() {
         } else {
           startForeground(NOTIFICATION_ID, notification)
         }
+        acquireWakeLock()
       }
       ACTION_UPDATE -> {
         val notification = buildNotification(intent)
         NotificationManagerCompat.from(this).notify(NOTIFICATION_ID, notification)
+        acquireWakeLock()
       }
       ACTION_STOP -> {
+        clearScheduleInternal()
+        releaseWakeLock()
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
       }
@@ -83,10 +143,172 @@ class MeditationForegroundService : Service() {
 
   override fun onDestroy() {
     super.onDestroy()
-    mediaSession?.release()
-    mediaSession = null
+    clearScheduleInternal()
+    releaseWakeLock()
     NotificationManagerCompat.from(this).cancel(NOTIFICATION_ID)
+    instance = null
   }
+
+  // ---- Sound scheduling API (called from MeditationServiceModule) ----
+
+  fun setScheduleInternal(entries: List<ScheduleEntry>) {
+    clearScheduleInternal()
+    schedulePaused = false
+    val now = SystemClock.uptimeMillis()
+    for (e in entries) {
+      when (e.type) {
+        "AMBIENT" -> startAmbient(e.soundId, ambientVolume)
+        "FIXED_INTERVAL", "RANDOM_INTERVAL" -> {
+          val tracker = IntervalTracker(e).apply {
+            nextFireUptimeMs = now + computeNextDelay(e)
+          }
+          intervalTrackers.add(tracker)
+          scheduleTracker(tracker)
+        }
+      }
+    }
+  }
+
+  fun clearScheduleInternal() {
+    soundHandler.removeCallbacksAndMessages(null)
+    intervalTrackers.clear()
+    schedulePaused = false
+    stopAmbient()
+  }
+
+  fun pauseScheduleInternal() {
+    if (schedulePaused) return
+    schedulePaused = true
+    val now = SystemClock.uptimeMillis()
+    for (t in intervalTrackers) {
+      t.pausedRemainingMs = (t.nextFireUptimeMs - now).coerceAtLeast(0)
+    }
+    soundHandler.removeCallbacksAndMessages(null)
+    try { ambientPlayer?.pause() } catch (_: Exception) {}
+  }
+
+  fun resumeScheduleInternal() {
+    if (!schedulePaused) return
+    schedulePaused = false
+    val now = SystemClock.uptimeMillis()
+    for (t in intervalTrackers) {
+      val remaining = t.pausedRemainingMs ?: continue
+      t.nextFireUptimeMs = now + remaining
+      t.pausedRemainingMs = null
+      scheduleTracker(t)
+    }
+    try { ambientPlayer?.start() } catch (_: Exception) {}
+  }
+
+  fun setAmbientVolumeInternal(volume: Float) {
+    ambientVolume = volume.coerceIn(0f, 1f)
+    try { ambientPlayer?.setVolume(ambientVolume, ambientVolume) } catch (_: Exception) {}
+  }
+
+  // ---- Internals ----
+
+  private fun scheduleTracker(tracker: IntervalTracker) {
+    val delay = (tracker.nextFireUptimeMs - SystemClock.uptimeMillis()).coerceAtLeast(0)
+    soundHandler.postDelayed({
+      // Tracker may have been removed via clearSchedule; ignore stale callbacks.
+      if (intervalTrackers.contains(tracker) && !schedulePaused) {
+        fireTracker(tracker)
+      }
+    }, delay)
+  }
+
+  private fun fireTracker(tracker: IntervalTracker) {
+    playOneShotSound(tracker.schedule.soundId)
+    val nextDelay = computeNextDelay(tracker.schedule)
+    tracker.nextFireUptimeMs = SystemClock.uptimeMillis() + nextDelay
+    scheduleTracker(tracker)
+  }
+
+  private fun computeNextDelay(schedule: ScheduleEntry): Long {
+    return when (schedule.type) {
+      "FIXED_INTERVAL" -> schedule.intervalMs.coerceAtLeast(100L)
+      "RANDOM_INTERVAL" -> {
+        val min = schedule.minIntervalMs.coerceAtLeast(100L)
+        val max = schedule.maxIntervalMs.coerceAtLeast(min + 1L)
+        Random.nextLong(min, max + 1L)
+      }
+      else -> Long.MAX_VALUE
+    }
+  }
+
+  private fun resolveSoundRes(soundId: Int): Int {
+    val name = resourceNameForSoundId(soundId) ?: return 0
+    return resources.getIdentifier(name, "raw", packageName)
+  }
+
+  private fun playOneShotSound(soundId: Int) {
+    val resId = resolveSoundRes(soundId)
+    if (resId == 0) return
+    try {
+      val player = MediaPlayer.create(this, resId) ?: return
+      player.setAudioAttributes(
+        AudioAttributes.Builder()
+          .setUsage(AudioAttributes.USAGE_MEDIA)
+          .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+          .build()
+      )
+      player.setOnCompletionListener {
+        try { it.release() } catch (_: Exception) {}
+      }
+      player.setOnErrorListener { mp, _, _ ->
+        try { mp.release() } catch (_: Exception) {}
+        true
+      }
+      player.start()
+    } catch (_: Exception) {
+      // Silently fail — don't crash the timer for a sound error
+    }
+  }
+
+  private fun startAmbient(soundId: Int, volume: Float) {
+    stopAmbient()
+    val resId = resolveSoundRes(soundId)
+    if (resId == 0) return
+    try {
+      val player = MediaPlayer.create(this, resId) ?: return
+      player.isLooping = true
+      player.setAudioAttributes(
+        AudioAttributes.Builder()
+          .setUsage(AudioAttributes.USAGE_MEDIA)
+          .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+          .build()
+      )
+      player.setVolume(volume, volume)
+      player.setOnErrorListener { mp, _, _ ->
+        try { mp.release() } catch (_: Exception) {}
+        if (ambientPlayer === mp) ambientPlayer = null
+        true
+      }
+      player.start()
+      ambientPlayer = player
+    } catch (_: Exception) {}
+  }
+
+  private fun stopAmbient() {
+    val p = ambientPlayer ?: return
+    ambientPlayer = null
+    try {
+      if (p.isPlaying) p.stop()
+      p.release()
+    } catch (_: Exception) {}
+  }
+
+  // ---- Wake lock ----
+
+  private fun acquireWakeLock() {
+    wakeLock?.acquire(WAKE_LOCK_TIMEOUT_MS)
+  }
+
+  private fun releaseWakeLock() {
+    wakeLock?.let { if (it.isHeld) it.release() }
+  }
+
+  // ---- Notification ----
 
   private fun ensureChannel() {
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -118,66 +340,12 @@ class MeditationForegroundService : Service() {
     val timeText = formatTime(remainingMs)
     val subtitle = if (phase.isNotEmpty()) "$phase · $timeText" else timeText
 
-    // Update MediaSession metadata so the lock-screen player + system tray show the right info
-    mediaSession?.apply {
-      setMetadata(
-        MediaMetadataCompat.Builder()
-          .putString(MediaMetadataCompat.METADATA_KEY_TITLE, preset)
-          .putString(MediaMetadataCompat.METADATA_KEY_ARTIST, subtitle)
-          .putLong(MediaMetadataCompat.METADATA_KEY_DURATION, totalMs.coerceAtLeast(0L))
-          .build()
-      )
-      setPlaybackState(
-        PlaybackStateCompat.Builder()
-          .setState(
-            if (isPaused) PlaybackStateCompat.STATE_PAUSED else PlaybackStateCompat.STATE_PLAYING,
-            (totalMs - remainingMs).coerceAtLeast(0L),
-            1f
-          )
-          .setActions(
-            PlaybackStateCompat.ACTION_PLAY or
-              PlaybackStateCompat.ACTION_PAUSE or
-              PlaybackStateCompat.ACTION_STOP or
-              PlaybackStateCompat.ACTION_SKIP_TO_NEXT or
-              PlaybackStateCompat.ACTION_SKIP_TO_PREVIOUS
-          )
-          .build()
-      )
-    }
-
     val pausePlayIcon = if (isPaused) {
       android.R.drawable.ic_media_play
     } else {
       android.R.drawable.ic_media_pause
     }
     val pausePlayLabel = if (isPaused) "Play" else "Pause"
-
-    // Actions in TimerControls order: Restart, Play/Pause, Stop, Skip
-    val restartAction = NotificationCompat.Action(
-      android.R.drawable.ic_menu_revert,
-      "Restart",
-      buildActionIntent(MeditationActionReceiver.ACTION_RESTART)
-    )
-    val pausePlayAction = NotificationCompat.Action(
-      pausePlayIcon,
-      pausePlayLabel,
-      buildActionIntent(MeditationActionReceiver.ACTION_PAUSE_PLAY)
-    )
-    val stopAction = NotificationCompat.Action(
-      android.R.drawable.ic_menu_close_clear_cancel,
-      "Stop",
-      buildActionIntent(MeditationActionReceiver.ACTION_STOP)
-    )
-    val skipAction = NotificationCompat.Action(
-      android.R.drawable.ic_media_next,
-      "Skip",
-      buildActionIntent(MeditationActionReceiver.ACTION_SKIP)
-    )
-
-    val mediaStyle = MediaStyle()
-      .setMediaSession(mediaSession?.sessionToken)
-      // Compact view (collapsed notification) shows these 3 — pick the most-used center trio.
-      .setShowActionsInCompactView(0, 1, 2)
 
     val builder = NotificationCompat.Builder(this, CHANNEL_ID)
       .setSmallIcon(android.R.drawable.ic_media_play)
@@ -187,13 +355,28 @@ class MeditationForegroundService : Service() {
       .setOnlyAlertOnce(true)
       .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
       .setContentIntent(buildContentIntent())
-      .setStyle(mediaStyle)
-      .addAction(restartAction)
-      .addAction(pausePlayAction)
-      .addAction(stopAction)
+      .addAction(
+        android.R.drawable.ic_menu_revert,
+        "Restart",
+        buildActionIntent(MeditationActionReceiver.ACTION_RESTART)
+      )
+      .addAction(
+        pausePlayIcon,
+        pausePlayLabel,
+        buildActionIntent(MeditationActionReceiver.ACTION_PAUSE_PLAY)
+      )
+      .addAction(
+        android.R.drawable.ic_menu_close_clear_cancel,
+        "Stop",
+        buildActionIntent(MeditationActionReceiver.ACTION_STOP)
+      )
 
     if (canSkip) {
-      builder.addAction(skipAction)
+      builder.addAction(
+        android.R.drawable.ic_media_next,
+        "Skip",
+        buildActionIntent(MeditationActionReceiver.ACTION_SKIP)
+      )
     }
 
     if (totalMs > 0 && remainingMs in 0..totalMs) {

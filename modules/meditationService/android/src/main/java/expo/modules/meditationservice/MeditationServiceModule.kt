@@ -16,6 +16,14 @@ class MeditationStateRecord : Record {
   @Field var canSkip: Boolean = false
 }
 
+class SoundScheduleRecord : Record {
+  @Field var type: String = ""
+  @Field var soundId: Int = 0
+  @Field var intervalMs: Double = 0.0
+  @Field var minIntervalMs: Double = 0.0
+  @Field var maxIntervalMs: Double = 0.0
+}
+
 class MeditationServiceModule : Module() {
 
   override fun definition() = ModuleDefinition {
@@ -63,6 +71,37 @@ class MeditationServiceModule : Module() {
         }
         ContextCompat.startForegroundService(context, intent)
       }
+    }
+
+    // ---- Sound scheduling (delegated directly to running service instance) ----
+
+    Function("setSoundSchedule") { entries: List<SoundScheduleRecord> ->
+      val mapped = entries.map {
+        MeditationForegroundService.ScheduleEntry(
+          type = it.type,
+          soundId = it.soundId,
+          intervalMs = it.intervalMs.toLong(),
+          minIntervalMs = it.minIntervalMs.toLong(),
+          maxIntervalMs = it.maxIntervalMs.toLong()
+        )
+      }
+      MeditationForegroundService.instance?.setScheduleInternal(mapped)
+    }
+
+    Function("clearSoundSchedule") {
+      MeditationForegroundService.instance?.clearScheduleInternal()
+    }
+
+    Function("pauseSoundSchedule") {
+      MeditationForegroundService.instance?.pauseScheduleInternal()
+    }
+
+    Function("resumeSoundSchedule") {
+      MeditationForegroundService.instance?.resumeScheduleInternal()
+    }
+
+    Function("setAmbientVolume") { volume: Double ->
+      MeditationForegroundService.instance?.setAmbientVolumeInternal(volume.toFloat())
     }
   }
 
