@@ -3,6 +3,7 @@ import { View, Text, Pressable, Alert, AppState, AppStateStatus, Platform, Switc
 import Slider from '@react-native-community/slider';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { CommonActions } from '@react-navigation/native';
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 import * as Haptics from 'expo-haptics';
 import { RootStackParamList } from '../navigation/navigation';
@@ -431,7 +432,9 @@ export default function TimerScreen({ navigation, route }: Props) {
         isExitingRef.current = true;
         setSaveDialogVisible(false);
         reset();
-        navigation.navigate('Home');
+        navigation.dispatch(
+      CommonActions.reset({ index: 0, routes: [{ name: 'Home' }] })
+    );
       } catch (e: any) {
         Alert.alert('Save Error', e?.message ?? 'Failed to save session');
       }
@@ -443,7 +446,9 @@ export default function TimerScreen({ navigation, route }: Props) {
     isExitingRef.current = true;
     setSaveDialogVisible(false);
     reset();
-    navigation.navigate('Home');
+    navigation.dispatch(
+      CommonActions.reset({ index: 0, routes: [{ name: 'Home' }] })
+    );
   }, [reset, navigation]);
 
   if (!preset) {
