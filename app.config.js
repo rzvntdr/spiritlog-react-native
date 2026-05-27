@@ -1,0 +1,41 @@
+// Dynamic Expo config. Version is sourced from package.json so there's only
+// one place to bump it. build.gradle does the same on the native side.
+const pkg = require('./package.json');
+
+module.exports = {
+  expo: {
+    name: 'SpiritLog',
+    slug: 'spiritlog',
+    version: pkg.version,
+    orientation: 'portrait',
+    icon: './assets/icon.png',
+    userInterfaceStyle: 'automatic',
+    newArchEnabled: true,
+    splash: {
+      image: './assets/splash-icon.png',
+      resizeMode: 'contain',
+      backgroundColor: '#1A2332',
+    },
+    ios: {
+      supportsTablet: false,
+      bundleIdentifier: 'com.spiritlog.app',
+      infoPlist: {
+        UIBackgroundModes: ['audio'],
+      },
+    },
+    android: {
+      adaptiveIcon: {
+        foregroundImage: './assets/adaptive-icon.png',
+        backgroundColor: '#1A2332',
+      },
+      edgeToEdgeEnabled: true,
+      package: 'com.spiritlog.app',
+    },
+    plugins: [
+      'expo-sqlite',
+      ['expo-notifications', { sounds: [] }],
+      '@react-native-google-signin/google-signin',
+      '@react-native-community/datetimepicker',
+    ],
+  },
+};

@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
-import { View, Text, Pressable, Alert, AppState, AppStateStatus, Platform, Switch } from 'react-native';
+import { View, Text, Pressable, Alert, AppState, AppStateStatus, Platform } from 'react-native';
 import Slider from '@react-native-community/slider';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -21,7 +21,12 @@ import TimerCircle from '../components/timer/TimerCircle';
 import PhaseTimeline from '../components/timer/PhaseTimeline';
 import TimerControls from '../components/timer/TimerControls';
 import SaveSessionDialog from '../components/timer/SaveSessionDialog';
+import DemotedToggle from '../components/timer/DemotedToggle';
+import { radius, spacing, typography } from '../theme/scale';
 import { soundEngine } from '../services/soundEngine';
+import { createLogger } from '../utils/logger';
+
+const log = createLogger('TimerScreen');
 import {
   scheduleMeditationComplete,
   cancelMeditationNotification,
@@ -99,20 +104,21 @@ export default function TimerScreen({ navigation, route }: Props) {
   // Initialize sound engine + session. Depends on presetId so it re-runs if the
   // screen is reused with a different preset (e.g. navigate() mid-swipe-back animation).
   useEffect(() => {
+    log.info('mount', { presetId });
     soundEngine.init();
     const currentPreset = usePresetStore.getState().presets.find((p) => p.id === presetId);
     if (currentPreset) {
       useTimerStore.getState().startSession(currentPreset);
       usePresetStore.getState().markUsed(currentPreset.id);
+    } else {
+      log.warn('mount: preset not found', { presetId });
     }
     return () => {
+      log.info('unmount', { presetId });
       if (tickRef.current) clearInterval(tickRef.current);
       soundEngine.dispose();
       cancelMeditationNotification();
       MeditationService.stop();
-      // Disable DND only if WE turned it on (tracked via dndActive),
-      // regardless of the current preference value. Otherwise DND stays
-      // stuck on the OS when the user toggles the preference off mid-session.
       if (dndActiveRef.current && Platform.OS === 'android') {
         Dnd.disableDnd();
       }
@@ -132,10 +138,12 @@ export default function TimerScreen({ navigation, route }: Props) {
   // The foreground service handles the persistent ongoing notification.
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (nextState: AppStateStatus) => {
+      log.debug('AppState change', { from: appStateRef.current, to: nextState });
       if (appStateRef.current.match(/active/) && nextState.match(/inactive|background/)) {
         if (isActiveRef.current && !isPausedRef.current) {
           const remaining = getRemainingMs();
           if (remaining !== null && remaining > 0) {
+            log.info('backgrounded: scheduling completion notification', { remainingMs: remaining });
             scheduleMeditationComplete(remaining);
           }
         }
@@ -157,9 +165,11 @@ export default function TimerScreen({ navigation, route }: Props) {
     if (Platform.OS !== 'android') return;
     const shouldBeActive = dndEnabled && !isPaused && isActive;
     if (shouldBeActive && !dndActive && Dnd.isAccessGranted()) {
+      log.info('DND enable');
       Dnd.enableDnd();
       setDndActive(true);
     } else if (!shouldBeActive && dndActive) {
+      log.info('DND disable');
       Dnd.disableDnd();
       setDndActive(false);
     }
@@ -252,6 +262,7 @@ export default function TimerScreen({ navigation, route }: Props) {
   // Auto-show save dialog when complete
   useEffect(() => {
     if (engineState.isComplete && isActive) {
+      log.info('auto-complete: showing save dialog');
       pause();
       MeditationService.stop();
       setSaveDialogVisible(true);
@@ -367,6 +378,7 @@ export default function TimerScreen({ navigation, route }: Props) {
     const unsubscribe = navigation.addListener('beforeRemove', (e) => {
       if (!isActive || engineState.isComplete || !hasStarted || isExitingRef.current) return;
 
+      log.info('beforeRemove intercepted — showing dialog');
       e.preventDefault();
 
       Alert.alert('End Meditation?', 'Your progress will be lost if you go back without saving.', [
@@ -374,6 +386,7 @@ export default function TimerScreen({ navigation, route }: Props) {
         {
           text: 'End & Save',
           onPress: () => {
+            log.info('beforeRemove: end & save');
             stop();
             setSaveDialogVisible(true);
           },
@@ -382,6 +395,7 @@ export default function TimerScreen({ navigation, route }: Props) {
           text: 'Discard',
           style: 'destructive',
           onPress: () => {
+            log.info('beforeRemove: discard');
             isExitingRef.current = true;
             cancelMeditationNotification();
             MeditationService.stop();
@@ -395,6 +409,7 @@ export default function TimerScreen({ navigation, route }: Props) {
   }, [navigation, isActive, engineState.isComplete, hasStarted, stop, reset]);
 
   const handleStop = useCallback(() => {
+    log.info('handleStop (End button)');
     stop();
     cancelMeditationNotification();
     MeditationService.clearSoundSchedule();
@@ -416,16 +431,17 @@ export default function TimerScreen({ navigation, route }: Props) {
           presetId: preset?.id ?? null,
           notes: null,
         };
+        log.info('saveSession', { duration: durationMinutes, presetId: session.presetId });
         await insertSession(session);
 
         useAchievementStore.getState().triggerCheck({ type: 'session_saved', data: session });
 
-        // Auto-backup after session if enabled and signed in
         const autoBackup = useSettingsStore.getState().autoBackupAfterSession;
         if (autoBackup) {
           const { isSignedIn, backupToDrive } = useBackupStore.getState();
           if (isSignedIn) {
-            backupToDrive().catch(() => {}); // fire-and-forget
+            log.debug('saveSession: auto-backup fire-and-forget');
+            backupToDrive().catch((err) => log.warn('auto-backup failed', err));
           }
         }
 
@@ -433,9 +449,10 @@ export default function TimerScreen({ navigation, route }: Props) {
         setSaveDialogVisible(false);
         reset();
         navigation.dispatch(
-      CommonActions.reset({ index: 0, routes: [{ name: 'Home' }] })
-    );
+          CommonActions.reset({ index: 0, routes: [{ name: 'Home' }] })
+        );
       } catch (e: any) {
+        log.error('saveSession failed', e);
         Alert.alert('Save Error', e?.message ?? 'Failed to save session');
       }
     },
@@ -443,8 +460,12 @@ export default function TimerScreen({ navigation, route }: Props) {
   );
 
   const handleDiscard = useCallback(() => {
+    log.info('handleDiscard');
     isExitingRef.current = true;
     setSaveDialogVisible(false);
+    cancelMeditationNotification();
+    MeditationService.clearSoundSchedule();
+    MeditationService.stop();
     reset();
     navigation.dispatch(
       CommonActions.reset({ index: 0, routes: [{ name: 'Home' }] })
@@ -454,7 +475,7 @@ export default function TimerScreen({ navigation, route }: Props) {
   if (!preset) {
     return (
       <SafeAreaView style={{ flex: 1, backgroundColor: c.background, justifyContent: 'center', alignItems: 'center' }}>
-        <Text style={{ color: c.onSurface }}>Preset not found</Text>
+        <Text style={[typography.body, { color: c.textMute }]}>Preset not found</Text>
       </SafeAreaView>
     );
   }
@@ -469,137 +490,48 @@ export default function TimerScreen({ navigation, route }: Props) {
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: c.background }}>
       {/* Header */}
-      <View style={{ flexDirection: 'row', alignItems: 'center', padding: 16 }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', padding: spacing.base }}>
         <Pressable onPress={handleBack} hitSlop={8}>
-          <Text style={{ fontSize: 24, color: c.onSurface }}>←</Text>
+          <Text style={{ fontSize: 22, color: c.textDim }}>←</Text>
         </Pressable>
         <Text
-          style={{ flex: 1, textAlign: 'center', fontSize: 18, color: c.onBackground }}
+          style={[typography.section, { flex: 1, textAlign: 'center', color: c.onBackground }]}
           numberOfLines={1}
         >
           {preset.name}
         </Text>
-        <View style={{ width: 24 }} />
+        <View style={{ width: 22 }} />
       </View>
 
-      {/* DND Toggle */}
-      {Platform.OS === 'android' && (
-        <View style={{ marginHorizontal: 24, marginBottom: 12 }}>
-          <Pressable
-            onPress={() => {
-              if (!dndEnabled && !Dnd.isAccessGranted()) {
-                Alert.alert(
-                  'Permission Required',
-                  'SpiritLog needs Do Not Disturb access to silence notifications during meditation.',
-                  [
-                    { text: 'Cancel', style: 'cancel' },
-                    {
-                      text: 'Open Settings',
-                      onPress: () => {
-                        Dnd.requestAccess();
-                        const sub = AppState.addEventListener('change', (state) => {
-                          if (state === 'active') {
-                            sub.remove();
-                            if (Dnd.isAccessGranted()) {
-                              setDndEnabled(true);
-                            }
-                          }
-                        });
-                      },
-                    },
-                  ]
-                );
-                return;
-              }
-              setDndEnabled(!dndEnabled);
+      {/* Demoted toggles — compact pill row above the timer */}
+      <View style={{ flexDirection: 'row', gap: spacing.md, justifyContent: 'center', marginTop: spacing.sm, marginBottom: spacing.md }}>
+        {Platform.OS === 'android' && (
+          <DemotedToggle
+            label="Do Not Disturb"
+            emoji="🌙"
+            value={dndEnabled}
+            onChange={(v) => {
+              if (v && !Dnd.isAccessGranted()) return; // handled via long-press
+              setDndEnabled(v);
             }}
-            style={{
-              flexDirection: 'row',
-              alignItems: 'center',
-              backgroundColor: c.surface,
-              borderRadius: 14,
-              paddingVertical: 14,
-              paddingHorizontal: 18,
-            }}
-          >
-            <Text style={{ fontSize: 22, marginRight: 14 }}>{dndEnabled ? '🔕' : '🔔'}</Text>
-            <View style={{ flex: 1 }}>
-              <Text style={{ fontSize: 15, fontWeight: '600', color: c.onBackground }}>
-                Do Not Disturb
-              </Text>
-              <Text style={{ fontSize: 12, color: c.onSurface, marginTop: 1 }}>
-                {dndEnabled
-                  ? dndActive ? 'Active — notifications silenced' : 'Will activate when timer runs'
-                  : 'Tap to enable during sessions'}
-              </Text>
-            </View>
-            <Switch
-              value={dndEnabled}
-              onValueChange={() => {
-                if (!dndEnabled && !Dnd.isAccessGranted()) {
-                  Alert.alert(
-                    'Permission Required',
-                    'SpiritLog needs Do Not Disturb access to silence notifications during meditation.',
-                    [
-                      { text: 'Cancel', style: 'cancel' },
-                      {
-                        text: 'Open Settings',
-                        onPress: () => {
-                          Dnd.requestAccess();
-                          const sub = AppState.addEventListener('change', (state) => {
-                            if (state === 'active') {
-                              sub.remove();
-                              if (Dnd.isAccessGranted()) {
-                                setDndEnabled(true);
-                              }
-                            }
-                          });
-                        },
-                      },
-                    ]
-                  );
-                  return;
+            disabled={!dndEnabled && !Dnd.isAccessGranted()}
+            onLongPress={() => {
+              Dnd.requestAccess();
+              const sub = AppState.addEventListener('change', (state) => {
+                if (state === 'active') {
+                  sub.remove();
+                  if (Dnd.isAccessGranted()) setDndEnabled(true);
                 }
-                setDndEnabled(!dndEnabled);
-              }}
-              trackColor={{ false: c.surfaceVariant, true: c.primaryContainer }}
-              thumbColor={dndEnabled ? c.primary : c.onSurface}
-            />
-          </Pressable>
-        </View>
-      )}
-
-      {/* Keep Screen Awake Toggle */}
-      <View style={{ marginHorizontal: 24, marginBottom: 12 }}>
-        <Pressable
-          onPress={() => setScreenAwake(!screenAwake)}
-          style={{
-            flexDirection: 'row',
-            alignItems: 'center',
-            backgroundColor: c.surface,
-            borderRadius: 14,
-            paddingVertical: 14,
-            paddingHorizontal: 18,
-          }}
-        >
-          <Text style={{ fontSize: 22, marginRight: 14 }}>{screenAwake ? '☀️' : '🌙'}</Text>
-          <View style={{ flex: 1 }}>
-            <Text style={{ fontSize: 15, fontWeight: '600', color: c.onBackground }}>
-              Keep Screen Awake
-            </Text>
-            <Text style={{ fontSize: 12, color: c.onSurface, marginTop: 1 }}>
-              {screenAwake
-                ? 'Screen stays on during the session'
-                : 'Screen will turn off normally'}
-            </Text>
-          </View>
-          <Switch
-            value={screenAwake}
-            onValueChange={setScreenAwake}
-            trackColor={{ false: c.surfaceVariant, true: c.primaryContainer }}
-            thumbColor={screenAwake ? c.primary : c.onSurface}
+              });
+            }}
           />
-        </Pressable>
+        )}
+        <DemotedToggle
+          label="Keep Awake"
+          emoji="☀️"
+          value={screenAwake}
+          onChange={setScreenAwake}
+        />
       </View>
 
       {/* Timer Circle */}
@@ -615,11 +547,11 @@ export default function TimerScreen({ navigation, route }: Props) {
 
       {/* Ambient volume slider — visible only when current phase has ambient sound */}
       {hasAmbient && (
-        <View style={{ marginHorizontal: 24, marginBottom: 8 }}>
+        <View style={{ marginHorizontal: spacing.lg, marginBottom: spacing.sm }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 2 }}>
-            <Text style={{ fontSize: 16, marginRight: 8 }}>🔉</Text>
-            <Text style={{ flex: 1, fontSize: 13, color: c.onSurface }}>Ambient Volume</Text>
-            <Text style={{ fontSize: 13, fontWeight: '600', color: c.onBackground }}>
+            <Text style={{ fontSize: 16, marginRight: spacing.sm }}>🔉</Text>
+            <Text style={[typography.body, { flex: 1, color: c.textDim }]}>Ambient Volume</Text>
+            <Text style={[typography.bodyEm, { color: c.onBackground }]}>
               {Math.round(ambientVolume * 100)}%
             </Text>
           </View>
@@ -633,26 +565,26 @@ export default function TimerScreen({ navigation, route }: Props) {
               if (Platform.OS === 'android') MeditationService.setAmbientVolume(v);
               else soundEngine.setAmbientVolume(v);
             }}
-            minimumTrackTintColor={c.primary}
-            maximumTrackTintColor={c.surfaceVariant}
-            thumbTintColor={c.primary}
+            minimumTrackTintColor={c.accent}
+            maximumTrackTintColor={c.surface2}
+            thumbTintColor={c.accent}
           />
         </View>
       )}
 
       {/* Phase Timeline */}
-      <View style={{ marginBottom: 16 }}>
+      <View style={{ marginBottom: spacing.base }}>
         <PhaseTimeline elements={elements} currentIndex={engineState.currentElementIndex} />
       </View>
 
       {/* Controls */}
-      <View style={{ paddingBottom: 32 }}>
+      <View style={{ paddingBottom: spacing.xl }}>
         <TimerControls
           isPaused={isPaused}
           onPlay={play}
           onPause={pause}
           onStop={handleStop}
-          onRestart={restartCurrent}
+          onDiscard={handleDiscard}
           onSkip={skipToNext}
         />
       </View>

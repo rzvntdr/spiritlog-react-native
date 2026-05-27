@@ -6,10 +6,13 @@ import { RootStackParamList } from '../navigation/navigation';
 import { useTheme } from '../theme/ThemeContext';
 import { usePresetStore } from '../stores/presetStore';
 import { useSessionStore } from '../stores/sessionStore';
-import { formatDuration } from '../utils/time';
 import { MeditationSession } from '../types/session';
+import { PresetTimer } from '../types/preset';
+import { radius, spacing, typography } from '../theme/scale';
 import CalendarHeatmap from '../components/journey/CalendarHeatmap';
 import DurationLineChart from '../components/journey/DurationLineChart';
+import RecordsPanel from '../components/journey/RecordsPanel';
+import PatternsCard from '../components/journey/PatternsCard';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Journey'>;
 
@@ -21,6 +24,15 @@ function formatSessionDate(timestamp: number): string {
   const ampm = hours >= 12 ? 'pm' : 'am';
   const h12 = hours % 12 || 12;
   return `${months[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()} · ${h12}:${minutes} ${ampm}`;
+}
+
+function firstPhaseEmoji(preset: PresetTimer | undefined): string {
+  if (!preset) return '🧘';
+  const first = preset.elements.find((el) => el.kind === 'duration');
+  if (!first || first.kind !== 'duration') return '🧘';
+  if (first.type === 'WARMUP') return '🌅';
+  if (first.type === 'INFINITE') return '∞';
+  return '🧘';
 }
 
 export default function JourneyScreen({ navigation }: Props) {
@@ -37,9 +49,13 @@ export default function JourneyScreen({ navigation }: Props) {
 
   const presetNameMap = useMemo(() => {
     const map = new Map<string, string>();
-    for (const p of presets) {
-      map.set(p.id, p.name);
-    }
+    for (const p of presets) map.set(p.id, p.name);
+    return map;
+  }, [presets]);
+
+  const presetMap = useMemo(() => {
+    const map = new Map<string, PresetTimer>();
+    for (const p of presets) map.set(p.id, p);
     return map;
   }, [presets]);
 
@@ -48,25 +64,20 @@ export default function JourneyScreen({ navigation }: Props) {
     loadStats();
   }, []);
 
-  const statCards: { label: string; value: string; color: string }[] = [
-    { label: 'Total Time', value: formatDuration(stats.totalMinutes), color: '#4DAAAA' },
-    { label: 'Day Streak', value: String(stats.currentStreak), color: '#C8954C' },
-    { label: 'Sessions', value: String(stats.totalSessions), color: '#6AAF6A' },
-    { label: 'Average', value: stats.avgDuration > 0 ? formatDuration(stats.avgDuration) : '0m', color: '#9B8AFB' },
-  ];
-
   type ListItem =
-    | { type: 'stats' }
+    | { type: 'records' }
     | { type: 'heatmap' }
     | { type: 'lineChart' }
+    | { type: 'patterns' }
     | { type: 'sessionsHeader' }
     | { type: 'session'; session: MeditationSession }
     | { type: 'empty' };
 
   const data: ListItem[] = [
-    { type: 'stats' },
+    { type: 'records' },
     { type: 'heatmap' },
     { type: 'lineChart' },
+    { type: 'patterns' },
     { type: 'sessionsHeader' },
   ];
 
@@ -97,24 +108,14 @@ export default function JourneyScreen({ navigation }: Props) {
 
   const renderItem = ({ item }: { item: ListItem }) => {
     switch (item.type) {
-      case 'stats':
+      case 'records':
         return (
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 16 }}>
-            {statCards.map((stat) => (
-              <View
-                key={stat.label}
-                style={{
-                  width: '48%',
-                  backgroundColor: c.surface,
-                  borderRadius: 12,
-                  padding: 14,
-                }}
-              >
-                <Text style={{ fontSize: 22, fontWeight: '700', color: stat.color }}>{stat.value}</Text>
-                <Text style={{ fontSize: 11, color: c.onSurface, marginTop: 2 }}>{stat.label}</Text>
-              </View>
-            ))}
-          </View>
+          <RecordsPanel
+            bestStreak={stats.bestStreak ?? 0}
+            longestSession={stats.longestSession ?? 0}
+            totalMinutes={stats.totalMinutes}
+            totalSessions={stats.totalSessions}
+          />
         );
 
       case 'heatmap':
@@ -123,56 +124,67 @@ export default function JourneyScreen({ navigation }: Props) {
       case 'lineChart':
         return <DurationLineChart sessions={sessions} presetNameMap={presetNameMap} />;
 
+      case 'patterns':
+        return <PatternsCard sessions={sessions} />;
+
       case 'sessionsHeader':
         return (
-          <Text style={{ fontSize: 16, fontWeight: '600', color: c.onBackground, marginBottom: 10 }}>
+          <Text style={[typography.section, { color: c.onBackground, marginBottom: spacing.sm }]}>
             Recent Sessions
           </Text>
         );
 
-      case 'session':
+      case 'session': {
+        const preset = item.session.presetId ? presetMap.get(item.session.presetId) : undefined;
+        const emoji = firstPhaseEmoji(preset);
+        const presetName = item.session.presetId
+          ? (presetNameMap.get(item.session.presetId) ?? 'Deleted preset')
+          : 'Free session';
         return (
-          <View
+          <Pressable
+            onLongPress={() => handleDeleteSession(item.session)}
+            delayLongPress={500}
             style={{
               backgroundColor: c.surface,
-              borderRadius: 12,
-              padding: 14,
-              marginBottom: 8,
+              borderRadius: radius.card,
+              padding: spacing.base,
+              marginBottom: spacing.sm,
               flexDirection: 'row',
               alignItems: 'center',
+              gap: spacing.md,
             }}
           >
-            <View
-              style={{
-                width: 36,
-                height: 36,
-                borderRadius: 18,
-                backgroundColor: c.surfaceVariant,
-                justifyContent: 'center',
-                alignItems: 'center',
-                marginRight: 12,
-              }}
-            >
-              <Text style={{ fontSize: 16 }}>🧘</Text>
+            <View style={{
+              width: 36,
+              height: 36,
+              borderRadius: radius.full,
+              backgroundColor: c.surface2,
+              justifyContent: 'center',
+              alignItems: 'center',
+            }}>
+              <Text style={{ fontSize: 16 }}>{emoji}</Text>
             </View>
             <View style={{ flex: 1 }}>
-              <Text style={{ color: c.onBackground, fontSize: 14 }}>
+              <Text style={[typography.bodyEm, { color: c.onBackground }]} numberOfLines={1}>
+                {presetName}
+              </Text>
+              <Text style={[typography.meta, { color: c.textMute, marginTop: 2 }]}>
                 {formatSessionDate(item.session.date)}
               </Text>
             </View>
-            <Text style={{ color: c.accent, fontWeight: '700', fontSize: 15, marginRight: 12 }}>
+            <Text style={[typography.bodyEm, { color: c.accent }]}>
               {item.session.duration} min
             </Text>
-            <Pressable onPress={() => handleDeleteSession(item.session)} hitSlop={8}>
-              <Text style={{ color: c.error, fontSize: 18 }}>✕</Text>
-            </Pressable>
-          </View>
+          </Pressable>
         );
+      }
 
       case 'empty':
         return (
-          <View style={{ backgroundColor: c.surface, borderRadius: 12, padding: 20, alignItems: 'center' }}>
-            <Text style={{ color: c.onSurface }}>No sessions in this time range</Text>
+          <View style={{ backgroundColor: c.surface, borderRadius: radius.card, padding: spacing.xl, alignItems: 'center' }}>
+            <Text style={[typography.body, { color: c.textMute, fontStyle: 'italic' }]}>
+              No sessions yet — start your first meditation
+            </Text>
           </View>
         );
     }
@@ -181,23 +193,21 @@ export default function JourneyScreen({ navigation }: Props) {
   if (!isLoaded) {
     return (
       <SafeAreaView style={{ flex: 1, backgroundColor: c.background, justifyContent: 'center', alignItems: 'center' }}>
-        <ActivityIndicator size="large" color={c.primary} />
+        <ActivityIndicator size="large" color={c.accent} />
       </SafeAreaView>
     );
   }
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: c.background }}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', padding: 16 }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.base, paddingVertical: spacing.sm }}>
         <Pressable onPress={() => navigation.goBack()} hitSlop={8}>
-          <Text style={{ fontSize: 24, color: c.onSurface }}>←</Text>
+          <Text style={{ fontSize: 22, color: c.textDim }}>←</Text>
         </Pressable>
-        <Text style={{ flex: 1, textAlign: 'center', fontSize: 20, fontWeight: '700', color: c.onBackground }}>
+        <Text style={[typography.title, { flex: 1, textAlign: 'center', color: c.onBackground }]}>
           Your Journey
         </Text>
-        <Pressable hitSlop={8}>
-          <Text style={{ fontSize: 20, color: c.onSurface }}>↗</Text>
-        </Pressable>
+        <View style={{ width: 22 }} />
       </View>
 
       <FlatList
@@ -207,7 +217,7 @@ export default function JourneyScreen({ navigation }: Props) {
           if (item.type === 'session') return item.session.id;
           return `${item.type}-${index}`;
         }}
-        contentContainerStyle={{ padding: 16 }}
+        contentContainerStyle={{ padding: spacing.base, paddingBottom: 80 }}
       />
     </SafeAreaView>
   );

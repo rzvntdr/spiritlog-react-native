@@ -1,6 +1,18 @@
 import { requireNativeModule, Platform, EventSubscription } from 'expo-modules-core';
+import { createLogger } from '../../src/utils/logger';
 
-const Native = Platform.OS === 'android' ? requireNativeModule('MeditationService') : null;
+const log = createLogger('meditationService');
+
+const Native = Platform.OS === 'android' ? safeRequire() : null;
+
+function safeRequire() {
+  try {
+    return requireNativeModule('MeditationService');
+  } catch (e) {
+    log.error('native module MeditationService not available', e);
+    return null;
+  }
+}
 
 export interface MeditationState {
   presetName: string;
@@ -30,20 +42,32 @@ export interface SoundScheduleEntry {
   maxIntervalMs?: number;
 }
 
+function call<T>(method: string, fn: () => T): T | undefined {
+  if (!Native) return undefined;
+  try {
+    return fn();
+  } catch (e) {
+    log.error(`${method} failed`, e);
+    return undefined;
+  }
+}
+
 export function start(state: MeditationState): void {
-  Native?.start(state);
+  log.info('start', { preset: state.presetName, phase: state.phaseName, remainingMs: state.remainingMs });
+  call('start', () => Native?.start(state));
 }
 
 export function update(state: MeditationState): void {
-  Native?.update(state);
+  call('update', () => Native?.update(state));
 }
 
 export function stop(): void {
-  Native?.stop();
+  log.info('stop');
+  call('stop', () => Native?.stop());
 }
 
 export function setSoundSchedule(entries: SoundScheduleEntry[]): void {
-  // Normalize so unset fields become 0 (the native record requires all fields)
+  log.debug('setSoundSchedule', { count: entries.length, types: entries.map((e) => e.type) });
   const payload = entries.map((e) => ({
     type: e.type,
     soundId: e.soundId,
@@ -51,23 +75,26 @@ export function setSoundSchedule(entries: SoundScheduleEntry[]): void {
     minIntervalMs: e.minIntervalMs ?? 0,
     maxIntervalMs: e.maxIntervalMs ?? 0,
   }));
-  Native?.setSoundSchedule(payload);
+  call('setSoundSchedule', () => Native?.setSoundSchedule(payload));
 }
 
 export function clearSoundSchedule(): void {
-  Native?.clearSoundSchedule();
+  log.debug('clearSoundSchedule');
+  call('clearSoundSchedule', () => Native?.clearSoundSchedule());
 }
 
 export function pauseSoundSchedule(): void {
-  Native?.pauseSoundSchedule();
+  log.debug('pauseSoundSchedule');
+  call('pauseSoundSchedule', () => Native?.pauseSoundSchedule());
 }
 
 export function resumeSoundSchedule(): void {
-  Native?.resumeSoundSchedule();
+  log.debug('resumeSoundSchedule');
+  call('resumeSoundSchedule', () => Native?.resumeSoundSchedule());
 }
 
 export function setAmbientVolume(volume: number): void {
-  Native?.setAmbientVolume(volume);
+  call('setAmbientVolume', () => Native?.setAmbientVolume(volume));
 }
 
 export function addActionListener(
@@ -75,5 +102,13 @@ export function addActionListener(
   callback: () => void,
 ): EventSubscription | null {
   if (!Native) return null;
-  return Native.addListener(event, callback);
+  try {
+    return Native.addListener(event, () => {
+      log.info('native action received', event);
+      callback();
+    });
+  } catch (e) {
+    log.error('addActionListener failed', { event }, e);
+    return null;
+  }
 }

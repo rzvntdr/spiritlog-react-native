@@ -3,9 +3,8 @@ name: Build Android APK
 on:
   push:
     branches: [main]
-  workflow_dispatch: # manual run from Actions tab
-  release:
-    types: [created]
+    tags: ['v*']
+  workflow_dispatch:
 
 jobs:
   build:
@@ -41,15 +40,71 @@ jobs:
       - name: Build release APK
         run: ./android/gradlew -p android assembleRelease --no-daemon
 
-      - name: Upload APK
+      - name: Determine version label
+        id: ver
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            echo "version=${GITHUB_REF#refs/tags/v}" >> "$GITHUB_OUTPUT"
+            echo "is_release=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=dev-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+            echo "is_release=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Rename APK with version
+        run: |
+          mkdir -p artifacts
+          cp android/app/build/outputs/apk/release/app-release.apk \
+             artifacts/spiritlog-v${{ steps.ver.outputs.version }}.apk
+
+      - name: Upload APK (private artifact)
         uses: actions/upload-artifact@v4
         with:
-          name: spiritlog-${{ github.sha }}
-          path: android/app/build/outputs/apk/release/app-release.apk
+          name: spiritlog-v${{ steps.ver.outputs.version }}
+          path: artifacts/spiritlog-v${{ steps.ver.outputs.version }}.apk
           retention-days: 90
 
-      - name: Attach APK to release
-        if: github.event_name == 'release'
-        uses: softprops/action-gh-release@v2
-        with:
-          files: android/app/build/outputs/apk/release/app-release.apk
+      # ---- public release: only on tag push ----
+
+      - name: Extract changelog section
+        if: steps.ver.outputs.is_release == 'true'
+        run: |
+          VERSION="${{ steps.ver.outputs.version }}"
+          # Pull lines between "## [VERSION]" and the next "## [" (exclusive).
+          # Falls back to a generic note if the section is missing.
+          awk -v v="$VERSION" '
+            $0 ~ "^## \\[" v "\\]" { flag=1; next }
+            flag && /^## \[/ { exit }
+            flag { print }
+          ' CHANGELOG.md > release-notes.md
+          if [ ! -s release-notes.md ]; then
+            echo "SpiritLog v${VERSION}" > release-notes.md
+            echo "" >> release-notes.md
+            echo "See CHANGELOG.md in the source repo." >> release-notes.md
+          fi
+          echo "--- release notes preview ---"
+          cat release-notes.md
+
+      - name: Publish to public releases repo
+        if: steps.ver.outputs.is_release == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.PUBLIC_RELEASES_TOKEN }}
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          set -euo pipefail
+          PUBLIC_REPO="rzvntdr/spiritlog-releases"
+          TAG="v${VERSION}"
+          TITLE="SpiritLog v${VERSION}"
+          APK="artifacts/spiritlog-v${VERSION}.apk"
+
+          # Create the release (idempotent: re-upload APK if release exists)
+          if gh release view "$TAG" --repo "$PUBLIC_REPO" >/dev/null 2>&1; then
+            echo "Release $TAG already exists on $PUBLIC_REPO — uploading APK only."
+            gh release upload "$TAG" "$APK" --repo "$PUBLIC_REPO" --clobber
+          else
+            gh release create "$TAG" \
+              --repo "$PUBLIC_REPO" \
+              --title "$TITLE" \
+              --notes-file release-notes.md \
+              "$APK"
+          fi

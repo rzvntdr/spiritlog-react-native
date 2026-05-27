@@ -22,6 +22,8 @@ interface SettingsState {
   reminder: ReminderConfig;
   achievementsEnabled: boolean;
   ambientVolume: number;
+  /** Debug-only: when set, HomeScreen's StreakHero uses this value instead of the real streak. */
+  demoStreakOverride: number | null;
   isLoaded: boolean;
 
   // Actions
@@ -33,6 +35,7 @@ interface SettingsState {
   setReminder: (config: ReminderConfig) => void;
   setAchievementsEnabled: (value: boolean) => void;
   setAmbientVolume: (value: number) => void;
+  setDemoStreakOverride: (value: number | null) => void;
   loadSettings: () => Promise<void>;
 }
 
@@ -47,6 +50,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   reminder: { enabled: false, hour: 8, minute: 0, days: [2, 3, 4, 5, 6, 7, 1], title: DEFAULT_REMINDER_TITLE, body: DEFAULT_REMINDER_BODY },
   achievementsEnabled: true,
   ambientVolume: 0.5,
+  demoStreakOverride: null,
   isLoaded: false,
 
   setThemeId: (id) => {
@@ -89,6 +93,11 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     persistSettings(get());
   },
 
+  setDemoStreakOverride: (value) => {
+    set({ demoStreakOverride: value });
+    persistSettings(get());
+  },
+
   loadSettings: async () => {
     try {
       const raw = await AsyncStorage.getItem(SETTINGS_KEY);
@@ -103,6 +112,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
           reminder: parsed.reminder ?? { enabled: false, hour: 8, minute: 0, days: [2, 3, 4, 5, 6, 7, 1], title: DEFAULT_REMINDER_TITLE, body: DEFAULT_REMINDER_BODY },
           achievementsEnabled: parsed.achievementsEnabled ?? true,
           ambientVolume: parsed.ambientVolume ?? 0.5,
+          demoStreakOverride: parsed.demoStreakOverride ?? null,
           isLoaded: true,
         });
       } else {
@@ -124,6 +134,7 @@ function persistSettings(state: SettingsState) {
     reminder: state.reminder,
     achievementsEnabled: state.achievementsEnabled,
     ambientVolume: state.ambientVolume,
+    demoStreakOverride: state.demoStreakOverride,
   };
   AsyncStorage.setItem(SETTINGS_KEY, JSON.stringify(data));
 }

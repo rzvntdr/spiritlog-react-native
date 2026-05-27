@@ -3,6 +3,9 @@ import { PresetTimer } from '../types/preset';
 import { MeditationElement } from '../types/timer';
 import { TimerEngine, TimerEngineState } from '../services/timerEngine';
 import { buildElements } from '../utils/presetBuilder';
+import { createLogger } from '../utils/logger';
+
+const log = createLogger('timerStore');
 
 interface TimerStoreState {
   // Session context
@@ -64,6 +67,7 @@ export const useTimerStore = create<TimerStoreState>((set, get) => ({
   hasStarted: false,
 
   startSession: (preset) => {
+    log.info('startSession', { presetId: preset.id, name: preset.name, elementCount: preset.elements.length });
     const elements = buildElements(preset);
     const state = engine.init(elements);
     set({
@@ -79,22 +83,26 @@ export const useTimerStore = create<TimerStoreState>((set, get) => ({
   },
 
   play: () => {
+    log.info('play');
     engine.play();
     set({ isPaused: false, hasStarted: true });
   },
 
   pause: () => {
+    log.info('pause');
     engine.pause();
     set({ isPaused: true });
   },
 
   stop: () => {
+    log.info('stop');
     const finalState = engine.stop();
     set({ isPaused: true, engineState: finalState, pendingSoundMarker: null });
     return finalState;
   },
 
   skipToNext: () => {
+    log.info('skipToNext', { from: get().engineState.currentElementIndex });
     const result = engine.skipToNext();
     set({
       engineState: result.state,
@@ -105,6 +113,7 @@ export const useTimerStore = create<TimerStoreState>((set, get) => ({
   },
 
   restartCurrent: () => {
+    log.info('restartCurrent', { idx: get().engineState.currentElementIndex });
     engine.restartCurrent();
     set({ engineState: engine.getState(), pendingSoundMarker: null });
   },
@@ -115,17 +124,18 @@ export const useTimerStore = create<TimerStoreState>((set, get) => ({
 
     if (result.playSoundId !== null) {
       if (result.waitingForSound) {
-        // Sound marker: use pendingSoundMarker (waits for completion)
+        log.debug('tick: sound marker queued', { soundId: result.playSoundId });
         updates.pendingSoundMarker = result.playSoundId;
       } else {
-        // Transition sound: fire-and-forget
         updates.pendingSoundId = result.playSoundId;
       }
     }
     if (result.phaseTransitioned) {
+      log.info('tick: phase transition', { newIdx: result.state.currentElementIndex, name: result.state.phaseName });
       updates.pendingHaptic = true;
     }
     if (result.state.isComplete) {
+      log.info('tick: session complete');
       updates.isPaused = true;
     }
 
@@ -148,6 +158,7 @@ export const useTimerStore = create<TimerStoreState>((set, get) => ({
   getRemainingMs: () => engine.getRemainingMs(),
 
   reset: () => {
+    log.info('reset');
     engine.stop();
     set({
       activePreset: null,

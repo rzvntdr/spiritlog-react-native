@@ -1,6 +1,9 @@
 import { Audio } from 'expo-av';
 import { SoundConfig, SoundIntervalType } from '../types/preset';
 import { useSettingsStore } from '../stores/settingsStore';
+import { createLogger } from '../utils/logger';
+
+const log = createLogger('soundEngine');
 
 // Effect sounds — one-shot playback
 const SOUND_FILES: Record<number, ReturnType<typeof require>> = {
@@ -34,11 +37,16 @@ class SoundEngine {
 
   async init(): Promise<void> {
     if (this.initialized) return;
-    await Audio.setAudioModeAsync({
-      playsInSilentModeIOS: true,
-      staysActiveInBackground: true,
-    });
-    this.initialized = true;
+    try {
+      await Audio.setAudioModeAsync({
+        playsInSilentModeIOS: true,
+        staysActiveInBackground: true,
+      });
+      this.initialized = true;
+      log.info('init: audio mode set');
+    } catch (e) {
+      log.error('init: setAudioModeAsync failed', e);
+    }
   }
 
   async stopPreview(): Promise<void> {
@@ -79,18 +87,20 @@ class SoundEngine {
    */
   async playSound(soundId: number): Promise<void> {
     const file = SOUND_FILES[soundId] ?? AMBIENT_FILES[soundId];
-    if (!file) return;
+    if (!file) {
+      log.warn('playSound: unknown soundId', soundId);
+      return;
+    }
 
     try {
       const { sound } = await Audio.Sound.createAsync(file, { shouldPlay: true });
-      // Auto-unload when finished
       sound.setOnPlaybackStatusUpdate((status) => {
         if (status.isLoaded && status.didJustFinish) {
-          sound.unloadAsync();
+          sound.unloadAsync().catch((e) => log.warn('playSound: unloadAsync failed', e));
         }
       });
     } catch (e) {
-      // Silently fail — don't crash the timer for a sound error
+      log.error('playSound: failed', { soundId }, e);
     }
   }
 
@@ -100,20 +110,25 @@ class SoundEngine {
    */
   async playSoundAndWait(soundId: number): Promise<void> {
     const file = SOUND_FILES[soundId] ?? AMBIENT_FILES[soundId];
-    if (!file) return;
+    if (!file) {
+      log.warn('playSoundAndWait: unknown soundId', soundId);
+      return;
+    }
 
     try {
+      log.debug('playSoundAndWait: start', { soundId });
       const { sound } = await Audio.Sound.createAsync(file, { shouldPlay: true });
       await new Promise<void>((resolve) => {
         sound.setOnPlaybackStatusUpdate((status) => {
           if (status.isLoaded && status.didJustFinish) {
-            sound.unloadAsync();
+            sound.unloadAsync().catch((e) => log.warn('playSoundAndWait: unloadAsync failed', e));
             resolve();
           }
         });
       });
+      log.debug('playSoundAndWait: done', { soundId });
     } catch (e) {
-      // Silently fail
+      log.error('playSoundAndWait: failed', { soundId }, e);
     }
   }
 
@@ -123,9 +138,13 @@ class SoundEngine {
   async startAmbient(soundId: number, volume = 0.5): Promise<void> {
     await this.stopAmbient();
     const file = AMBIENT_FILES[soundId];
-    if (!file) return;
+    if (!file) {
+      log.warn('startAmbient: unknown soundId', soundId);
+      return;
+    }
 
     try {
+      log.info('startAmbient', { soundId, volume });
       const { sound } = await Audio.Sound.createAsync(file, {
         shouldPlay: true,
         isLooping: true,
@@ -133,20 +152,21 @@ class SoundEngine {
       });
       this.ambientSound = sound;
     } catch (e) {
-      // Silently fail
+      log.error('startAmbient: failed', { soundId }, e);
     }
   }
 
   /**
-   * Stop ambient sound with optional fade out.
+   * Stop ambient sound.
    */
   async stopAmbient(): Promise<void> {
     if (this.ambientSound) {
       try {
         await this.ambientSound.stopAsync();
         await this.ambientSound.unloadAsync();
+        log.info('stopAmbient: stopped');
       } catch (e) {
-        // Already unloaded
+        log.warn('stopAmbient: already unloaded or failed', e);
       }
       this.ambientSound = null;
     }
@@ -242,6 +262,7 @@ class SoundEngine {
    * Clean up all resources.
    */
   async dispose(): Promise<void> {
+    log.info('dispose');
     await this.stopAmbient();
     this.intervalTrackers = [];
   }

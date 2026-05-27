@@ -175,7 +175,7 @@ export default function DurationLineChart({ sessions, presetNameMap }: Props) {
       </Text>
 
       {/* Selected day info (always visible) */}
-      <View style={{ backgroundColor: c.surfaceVariant, borderRadius: 8, padding: 10, marginBottom: 12, height: 52, justifyContent: 'center' }}>
+      <View style={{ backgroundColor: c.surface2, borderRadius: 8, padding: 10, marginBottom: 12, height: 52, justifyContent: 'center' }}>
         {selectedIndex !== null && points[selectedIndex] ? (
           <>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -187,13 +187,13 @@ export default function DurationLineChart({ sessions, presetNameMap }: Props) {
               </Text>
             </View>
             {points[selectedIndex].presetNames.length > 0 && (
-              <Text style={{ color: c.onSurface, fontSize: 11, marginTop: 2 }} numberOfLines={1}>
+              <Text style={{ color: c.textMute, fontSize: 11, marginTop: 2 }} numberOfLines={1}>
                 {points[selectedIndex].presetNames.join(', ')}
               </Text>
             )}
           </>
         ) : (
-          <Text style={{ color: c.onSurface, fontSize: 12 }}>Tap a point to see details</Text>
+          <Text style={{ color: c.textMute, fontSize: 12 }}>Tap a point to see details</Text>
         )}
       </View>
 
@@ -203,31 +203,31 @@ export default function DurationLineChart({ sessions, presetNameMap }: Props) {
           onPress={() => setShowFromPicker(true)}
           style={{
             flex: 1,
-            backgroundColor: c.surfaceVariant,
+            backgroundColor: c.surface2,
             borderRadius: 8,
             paddingVertical: 8,
             paddingHorizontal: 12,
           }}
         >
-          <Text style={{ fontSize: 10, color: c.onSurface, marginBottom: 2 }}>From</Text>
+          <Text style={{ fontSize: 10, color: c.textMute, marginBottom: 2 }}>From</Text>
           <Text style={{ fontSize: 13, color: c.onBackground, fontWeight: '600' }}>
             {formatPickerLabel(fromDate)}
           </Text>
         </Pressable>
 
-        <Text style={{ color: c.onSurface, fontSize: 14 }}>–</Text>
+        <Text style={{ color: c.textMute, fontSize: 14 }}>–</Text>
 
         <Pressable
           onPress={() => setShowToPicker(true)}
           style={{
             flex: 1,
-            backgroundColor: c.surfaceVariant,
+            backgroundColor: c.surface2,
             borderRadius: 8,
             paddingVertical: 8,
             paddingHorizontal: 12,
           }}
         >
-          <Text style={{ fontSize: 10, color: c.onSurface, marginBottom: 2 }}>To</Text>
+          <Text style={{ fontSize: 10, color: c.textMute, marginBottom: 2 }}>To</Text>
           <Text style={{ fontSize: 13, color: c.onBackground, fontWeight: '600' }}>
             {formatPickerLabel(toDate)}
           </Text>
@@ -263,7 +263,7 @@ export default function DurationLineChart({ sessions, presetNameMap }: Props) {
                 x={Y_AXIS_WIDTH - 4}
                 y={g.y + 4}
                 fontSize={9}
-                fill={c.onSurface}
+                fill={c.textMute}
                 textAnchor="end"
               >
                 {g.value}
@@ -287,15 +287,15 @@ export default function DurationLineChart({ sessions, presetNameMap }: Props) {
                   y1={g.y}
                   x2={chartWidth}
                   y2={g.y}
-                  stroke={c.surfaceVariant}
+                  stroke={c.line}
                   strokeWidth={1}
                 />
               ))}
 
-              {/* Area fill */}
-              <Path d={areaPath} fill={c.accent} opacity={0.15} />
+              {/* Area fill — teal at 12% */}
+              <Path d={areaPath} fill={c.accent} opacity={0.12} />
 
-              {/* Line */}
+              {/* Line — single teal hue */}
               <Path d={linePath} fill="none" stroke={c.accent} strokeWidth={1.5} />
 
               {/* Data points for non-zero days */}
@@ -332,7 +332,7 @@ export default function DurationLineChart({ sessions, presetNameMap }: Props) {
                     x={getX(i)}
                     y={TOP_PADDING + CHART_HEIGHT + 16}
                     fontSize={8}
-                    fill={c.onSurface}
+                    fill={c.textMute}
                     textAnchor="middle"
                   >
                     {p.label}
@@ -343,7 +343,7 @@ export default function DurationLineChart({ sessions, presetNameMap }: Props) {
           </ScrollView>
         </View>
       ) : (
-        <Text style={{ color: c.onSurface, fontSize: 12, fontStyle: 'italic', textAlign: 'center', marginTop: 8 }}>
+        <Text style={{ color: c.textMute, fontSize: 12, fontStyle: 'italic', textAlign: 'center', marginTop: 8 }}>
           No data for this period
         </Text>
       )}

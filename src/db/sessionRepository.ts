@@ -95,6 +95,35 @@ export async function getAverageSessionDuration(): Promise<number> {
   return Math.round(result?.avg ?? 0);
 }
 
+export async function getLongestSession(): Promise<number> {
+  const db = await getDatabase();
+  const result = await db.getFirstAsync<{ max: number | null }>(
+    'SELECT MAX(duration) as max FROM sessions'
+  );
+  return result?.max ?? 0;
+}
+
+export async function getBestStreak(): Promise<number> {
+  const db = await getDatabase();
+  const rows = await db.getAllAsync<{ day_start: number }>(
+    `SELECT DISTINCT date / 86400000 * 86400000 as day_start
+     FROM sessions ORDER BY day_start ASC`
+  );
+  if (rows.length === 0) return 0;
+  const oneDayMs = 86400000;
+  let best = 1;
+  let run = 1;
+  for (let i = 1; i < rows.length; i++) {
+    if (rows[i].day_start - rows[i - 1].day_start === oneDayMs) {
+      run++;
+      if (run > best) best = run;
+    } else {
+      run = 1;
+    }
+  }
+  return best;
+}
+
 export async function getCurrentStreak(): Promise<number> {
   const db = await getDatabase();
   // Get all unique session dates (as day timestamps) for the last 365 days

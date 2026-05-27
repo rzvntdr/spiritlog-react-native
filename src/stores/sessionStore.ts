@@ -1,6 +1,9 @@
 import { create } from 'zustand';
 import { MeditationSession } from '../types/session';
 import * as repo from '../db/sessionRepository';
+import { createLogger } from '../utils/logger';
+
+const log = createLogger('sessionStore');
 
 interface SessionStats {
   totalSessions: number;
@@ -8,6 +11,9 @@ interface SessionStats {
   thisWeek: number;
   avgDuration: number;
   currentStreak: number;
+  bestStreak: number;
+  longestSession: number;
+  freezesAvailable: number; // TODO: implement Q2 freeze logic; 0 until then
 }
 
 interface SessionState {
@@ -28,6 +34,9 @@ const emptyStats: SessionStats = {
   thisWeek: 0,
   avgDuration: 0,
   currentStreak: 0,
+  bestStreak: 0,
+  longestSession: 0,
+  freezesAvailable: 0,
 };
 
 export const useSessionStore = create<SessionState>((set) => ({
@@ -36,45 +45,70 @@ export const useSessionStore = create<SessionState>((set) => ({
   isLoaded: false,
 
   loadSessions: async () => {
-    const sessions = await repo.getAllSessions();
-    set({ sessions, isLoaded: true });
+    try {
+      const sessions = await repo.getAllSessions();
+      log.debug('loadSessions', { count: sessions.length });
+      set({ sessions, isLoaded: true });
+    } catch (e) {
+      log.error('loadSessions failed', e);
+      set({ isLoaded: true });
+    }
   },
 
   loadStats: async () => {
-    const [totalSessions, totalMinutes, thisWeek, avgDuration, currentStreak] =
-      await Promise.all([
-        repo.getTotalSessionCount(),
-        repo.getTotalMeditationMinutes(),
-        repo.getSessionsCountThisWeek(),
-        repo.getAverageSessionDuration(),
-        repo.getCurrentStreak(),
-      ]);
-    set({
-      stats: { totalSessions, totalMinutes, thisWeek, avgDuration, currentStreak },
-    });
+    try {
+      const [totalSessions, totalMinutes, thisWeek, avgDuration, currentStreak, bestStreak, longestSession] =
+        await Promise.all([
+          repo.getTotalSessionCount(),
+          repo.getTotalMeditationMinutes(),
+          repo.getSessionsCountThisWeek(),
+          repo.getAverageSessionDuration(),
+          repo.getCurrentStreak(),
+          repo.getBestStreak(),
+          repo.getLongestSession(),
+        ]);
+      log.debug('loadStats', { totalSessions, currentStreak, bestStreak });
+      set({
+        stats: { totalSessions, totalMinutes, thisWeek, avgDuration, currentStreak, bestStreak, longestSession, freezesAvailable: 0 },
+      });
+    } catch (e) {
+      log.error('loadStats failed', e);
+    }
   },
 
   insertSession: async (session) => {
-    await repo.insertSession(session);
-    // Refresh both lists and stats
-    const sessions = await repo.getAllSessions();
-    const [totalSessions, totalMinutes, thisWeek, avgDuration, currentStreak] =
-      await Promise.all([
-        repo.getTotalSessionCount(),
-        repo.getTotalMeditationMinutes(),
-        repo.getSessionsCountThisWeek(),
-        repo.getAverageSessionDuration(),
-        repo.getCurrentStreak(),
-      ]);
-    set({
-      sessions,
-      stats: { totalSessions, totalMinutes, thisWeek, avgDuration, currentStreak },
-    });
+    try {
+      log.info('insertSession', { id: session.id, duration: session.duration, presetId: session.presetId });
+      await repo.insertSession(session);
+      const sessions = await repo.getAllSessions();
+      const [totalSessions, totalMinutes, thisWeek, avgDuration, currentStreak, bestStreak, longestSession] =
+        await Promise.all([
+          repo.getTotalSessionCount(),
+          repo.getTotalMeditationMinutes(),
+          repo.getSessionsCountThisWeek(),
+          repo.getAverageSessionDuration(),
+          repo.getCurrentStreak(),
+          repo.getBestStreak(),
+          repo.getLongestSession(),
+        ]);
+      set({
+        sessions,
+        stats: { totalSessions, totalMinutes, thisWeek, avgDuration, currentStreak, bestStreak, longestSession, freezesAvailable: 0 },
+      });
+    } catch (e) {
+      log.error('insertSession failed', { id: session.id }, e);
+      throw e; // propagate so caller can show Save Error
+    }
   },
 
   deleteSession: async (id) => {
-    await repo.deleteSession(id);
-    const sessions = await repo.getAllSessions();
-    set({ sessions });
+    try {
+      log.info('deleteSession', { id });
+      await repo.deleteSession(id);
+      const sessions = await repo.getAllSessions();
+      set({ sessions });
+    } catch (e) {
+      log.error('deleteSession failed', { id }, e);
+    }
   },
 }));

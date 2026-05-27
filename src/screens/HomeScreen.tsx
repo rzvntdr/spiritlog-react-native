@@ -8,8 +8,11 @@ import { usePresetStore } from '../stores/presetStore';
 import { useShallow } from 'zustand/react/shallow';
 import { useSessionStore } from '../stores/sessionStore';
 import { useSettingsStore } from '../stores/settingsStore';
-import { formatDuration } from '../utils/time';
 import PresetCard from '../components/preset/PresetCard';
+import StreakHero from '../components/home/StreakHero';
+import WelcomeCard from '../components/home/WelcomeCard';
+import HomeStats from '../components/home/HomeStats';
+import { spacing } from '../theme/scale';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Home'>;
 
@@ -26,6 +29,7 @@ export default function HomeScreen({ navigation }: Props) {
   const loadStats = useSessionStore((s) => s.loadStats);
   const stats = useSessionStore((s) => s.stats);
   const achievementsEnabled = useSettingsStore((s) => s.achievementsEnabled);
+  const demoStreakOverride = useSettingsStore((s) => s.demoStreakOverride);
 
   useEffect(() => {
     loadPresets();
@@ -44,7 +48,7 @@ export default function HomeScreen({ navigation }: Props) {
   if (!isPresetsLoaded) {
     return (
       <SafeAreaView style={{ flex: 1, backgroundColor: c.background, justifyContent: 'center', alignItems: 'center' }}>
-        <ActivityIndicator size="large" color={c.primary} />
+        <ActivityIndicator size="large" color={c.accent} />
       </SafeAreaView>
     );
   }
@@ -72,28 +76,22 @@ export default function HomeScreen({ navigation }: Props) {
 
   const renderItem = ({ item }: { item: ListItem }) => {
     switch (item.type) {
-      case 'stats':
+      case 'stats': {
+        const realStreak = stats.currentStreak ?? 0;
+        const currentStreak = demoStreakOverride ?? realStreak;
+        const freezes = stats.freezesAvailable ?? 0;
+        const hasHistory = stats.totalMinutes > 0;
         return (
-          <View
-            style={{
-              backgroundColor: c.surface,
-              borderRadius: 12,
-              padding: 20,
-              marginBottom: 20,
-              flexDirection: 'row',
-              justifyContent: 'space-around',
-            }}
-          >
-            <StatItem icon="🧘" value={String(stats.thisWeek)} label="This Week" colors={c} />
-            <StatItem icon="🔥" value={String(stats.currentStreak)} label="Day Streak" colors={c} />
-            <StatItem
-              icon="⏱"
-              value={stats.avgDuration > 0 ? formatDuration(stats.avgDuration) : '0m'}
-              label="Avg Session"
-              colors={c}
-            />
+          <View style={{ gap: spacing.md, marginBottom: spacing.md }}>
+            {currentStreak > 0
+              ? <StreakHero currentStreak={currentStreak} freezesAvailable={freezes} />
+              : <WelcomeCard />}
+            {hasHistory && (
+              <HomeStats totalMinutes={stats.totalMinutes} avgMinutes={stats.avgDuration} />
+            )}
           </View>
         );
+      }
 
       case 'sectionHeader':
         return (
@@ -162,19 +160,19 @@ export default function HomeScreen({ navigation }: Props) {
         onPress={() => navigation.navigate('CreatePreset')}
         style={{
           position: 'absolute',
-          bottom: 24,
-          right: 24,
+          bottom: spacing.lg,
+          right: spacing.lg,
           backgroundColor: c.primaryContainer,
           borderRadius: 28,
-          paddingHorizontal: 20,
-          paddingVertical: 14,
+          paddingHorizontal: spacing.xl / 2 + 4,
+          paddingVertical: spacing.md + 2,
           flexDirection: 'row',
           alignItems: 'center',
           elevation: 4,
-          shadowColor: '#000',
-          shadowOffset: { width: 0, height: 2 },
-          shadowOpacity: 0.25,
-          shadowRadius: 4,
+          shadowColor: c.accent,
+          shadowOffset: { width: 0, height: 8 },
+          shadowOpacity: 0.35,
+          shadowRadius: 24,
         }}
       >
         <Text style={{ color: c.onPrimary, fontSize: 16, fontWeight: '600' }}>+ Create Preset</Text>
@@ -184,22 +182,3 @@ export default function HomeScreen({ navigation }: Props) {
   );
 }
 
-function StatItem({
-  icon,
-  value,
-  label,
-  colors,
-}: {
-  icon: string;
-  value: string;
-  label: string;
-  colors: ReturnType<typeof useTheme>['theme']['colors'];
-}) {
-  return (
-    <View style={{ alignItems: 'center' }}>
-      <Text style={{ fontSize: 18, marginBottom: 4 }}>{icon}</Text>
-      <Text style={{ fontSize: 22, fontWeight: '700', color: colors.onBackground }}>{value}</Text>
-      <Text style={{ fontSize: 11, color: colors.onSurface, marginTop: 2 }}>{label}</Text>
-    </View>
-  );
-}

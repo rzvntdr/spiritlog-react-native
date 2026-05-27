@@ -3,6 +3,7 @@ import { View, Text } from 'react-native';
 import { DurationConfig } from '../../types/preset';
 import { useTheme } from '../../theme/ThemeContext';
 import { formatPhaseDuration } from '../../utils/time';
+import { radius, spacing, typography } from '../../theme/scale';
 
 interface Props {
   phase: DurationConfig;
@@ -24,13 +25,13 @@ export default function PhaseBadge({ phase }: Props) {
     <View
       style={{
         backgroundColor: bgColor,
-        borderRadius: 6,
-        paddingHorizontal: 8,
-        paddingVertical: 3,
-        marginRight: 6,
+        borderRadius: radius.sm,
+        paddingHorizontal: spacing.sm,
+        paddingVertical: spacing.xs - 1,
+        marginRight: spacing.sm - 2,
       }}
     >
-      <Text style={{ color: '#FFFFFF', fontSize: 12, fontWeight: '600' }}>{label}</Text>
+      <Text style={{ ...typography.micro, color: theme.colors.onPrimary }}>{label}</Text>
     </View>
   );
 }

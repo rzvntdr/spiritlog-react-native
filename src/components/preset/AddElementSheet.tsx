@@ -1,84 +1,74 @@
 import React from 'react';
-import { View, Text, Pressable } from 'react-native';
+import { View, Text, Pressable, StyleSheet } from 'react-native';
 import BottomSheet from '../common/BottomSheet';
 import { useTheme } from '../../theme/ThemeContext';
-import { DurationType } from '../../types/preset';
+import { radius, spacing, typography } from '../../theme/scale';
 
 interface Props {
   visible: boolean;
   onClose: () => void;
-  onAddSound: () => void;
-  onAddDuration: (type: DurationType) => void;
+  onAddPhase: () => void;
+  onAddSoundMarker: () => void;
 }
 
-export default function AddElementSheet({ visible, onClose, onAddSound, onAddDuration }: Props) {
+export default function AddElementSheet({ visible, onClose, onAddPhase, onAddSoundMarker }: Props) {
   const { theme } = useTheme();
   const c = theme.colors;
 
-  const durationTypes: { type: DurationType; label: string; icon: string; color: string }[] = [
-    { type: 'WARMUP', label: 'Warm-up', icon: '⏳', color: c.warmup },
-    { type: 'NORMAL', label: 'Normal', icon: '🕐', color: c.accent },
-    { type: 'INFINITE', label: 'Infinite', icon: '∞', color: c.infinite },
-  ];
-
   return (
     <BottomSheet visible={visible} onClose={onClose} title="Add Element">
-      {/* Sound */}
+      {/* Add Phase */}
       <Pressable
-        onPress={() => { onAddSound(); onClose(); }}
-        style={{
-          flexDirection: 'row',
-          alignItems: 'center',
-          backgroundColor: c.surfaceVariant,
-          borderRadius: 12,
-          padding: 16,
-          marginBottom: 12,
-        }}
+        onPress={() => { onAddPhase(); onClose(); }}
+        style={[styles.option, { backgroundColor: c.surface2 }]}
       >
-        <Text style={{ fontSize: 24, marginRight: 14 }}>🎵</Text>
-        <View>
-          <Text style={{ fontSize: 16, fontWeight: '600', color: c.onBackground }}>Sound Marker</Text>
-          <Text style={{ fontSize: 12, color: c.onSurface }}>Play a sound between phases</Text>
+        <View style={[styles.icon, { backgroundColor: `${c.accent}28` }]}>
+          <Text style={styles.iconText}>🧘</Text>
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={[typography.bodyEm, { color: c.onBackground }]}>Add Phase</Text>
+          <Text style={[typography.meta, { color: c.textMute, marginTop: 2 }]}>
+            Warmup, timed, or open-ended meditation
+          </Text>
         </View>
       </Pressable>
 
-      {/* Duration types */}
-      {durationTypes.map((dt) => (
-        <Pressable
-          key={dt.type}
-          onPress={() => { onAddDuration(dt.type); onClose(); }}
-          style={{
-            flexDirection: 'row',
-            alignItems: 'center',
-            backgroundColor: c.surfaceVariant,
-            borderRadius: 12,
-            padding: 16,
-            marginBottom: 12,
-          }}
-        >
-          <View
-            style={{
-              width: 40,
-              height: 40,
-              borderRadius: 20,
-              backgroundColor: dt.color,
-              justifyContent: 'center',
-              alignItems: 'center',
-              marginRight: 14,
-            }}
-          >
-            <Text style={{ fontSize: 18, color: '#fff' }}>{dt.icon}</Text>
-          </View>
-          <View>
-            <Text style={{ fontSize: 16, fontWeight: '600', color: c.onBackground }}>{dt.label} Phase</Text>
-            <Text style={{ fontSize: 12, color: c.onSurface }}>
-              {dt.type === 'WARMUP' && 'Short preparation phase (counts up)'}
-              {dt.type === 'NORMAL' && 'Timed meditation phase (counts down)'}
-              {dt.type === 'INFINITE' && 'Open-ended, stop when ready'}
-            </Text>
-          </View>
-        </Pressable>
-      ))}
+      {/* Add Sound Marker */}
+      <Pressable
+        onPress={() => { onAddSoundMarker(); onClose(); }}
+        style={[styles.option, { backgroundColor: c.surface2 }]}
+      >
+        <View style={[styles.icon, { backgroundColor: `${c.warmup}28` }]}>
+          <Text style={styles.iconText}>🎵</Text>
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={[typography.bodyEm, { color: c.onBackground }]}>Add Sound Marker</Text>
+          <Text style={[typography.meta, { color: c.textMute, marginTop: 2 }]}>
+            Play a sound between phases
+          </Text>
+        </View>
+      </Pressable>
     </BottomSheet>
   );
 }
+
+const styles = StyleSheet.create({
+  option: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: radius.md,
+    padding: spacing.base,
+    marginBottom: spacing.sm,
+    gap: spacing.md,
+  },
+  icon: {
+    width: 44,
+    height: 44,
+    borderRadius: radius.full,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  iconText: {
+    fontSize: 20,
+  },
+});

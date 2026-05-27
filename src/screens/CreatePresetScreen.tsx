@@ -8,33 +8,21 @@ import { useTheme } from '../theme/ThemeContext';
 import { usePresetStore } from '../stores/presetStore';
 import { useAchievementStore } from '../stores/achievementStore';
 import { PresetTimer, DurationConfig, DurationType, SoundConfig, PresetElement } from '../types/preset';
-import { getSoundById } from '../types/sound';
 import { generateUUID } from '../utils/uuid';
 import { formatPhaseDuration } from '../utils/time';
+import { soundConfigToLabel } from '../utils/presetBuilder';
+import { radius, spacing, typography } from '../theme/scale';
 import AddElementSheet from '../components/preset/AddElementSheet';
 import DurationEditor from '../components/preset/DurationEditor';
 import SoundPickerDialog from '../components/preset/SoundPickerDialog';
-import IntervalSoundDialog from '../components/preset/IntervalSoundDialog';
+import PhaseChip from '../components/preset/PhaseChip';
+import SoundMarker from '../components/preset/SoundMarker';
 
 type BuilderElement =
   | { kind: 'sound'; id: string; name: string; soundId: number }
   | { kind: 'duration'; id: string; config: DurationConfig };
 
 type Props = NativeStackScreenProps<RootStackParamList, 'CreatePreset' | 'EditPreset'>;
-
-function getPhaseSoundLabel(config: SoundConfig): string {
-  const sound = getSoundById(config.soundId);
-  const name = sound?.name ?? 'Unknown';
-  if (config.type === 'FIXED_INTERVAL') {
-    const secs = (config.params as { intervalMillis: number }).intervalMillis / 1000;
-    return `${name} · every ${secs}s`;
-  }
-  if (config.type === 'RANDOM_INTERVAL') {
-    const p = config.params as { minIntervalMillis: number; maxIntervalMillis: number };
-    return `${name} · ${p.minIntervalMillis / 1000}s–${p.maxIntervalMillis / 1000}s`;
-  }
-  return `${name} · ambient`;
-}
 
 export default function CreatePresetScreen({ navigation, route }: Props) {
   const { theme } = useTheme();
@@ -55,12 +43,10 @@ export default function CreatePresetScreen({ navigation, route }: Props) {
   const [addElementVisible, setAddElementVisible] = useState(false);
   const [durationEditorVisible, setDurationEditorVisible] = useState(false);
   const [soundPickerVisible, setSoundPickerVisible] = useState(false);
-  const [intervalSoundVisible, setIntervalSoundVisible] = useState(false);
 
   const [editingElementIndex, setEditingElementIndex] = useState<number | null>(null);
-  const [newDurationType, setNewDurationType] = useState<DurationType>('NORMAL');
-  const [editingPhaseIndex, setEditingPhaseIndex] = useState<number | null>(null);
-  const [editingSoundIndex, setEditingSoundIndex] = useState<number | null>(null);
+  // null => append at end; n => insert at position n
+  const [addInsertIndex, setAddInsertIndex] = useState<number | null>(null);
 
   useEffect(() => {
     if (existingPreset) {
@@ -95,34 +81,41 @@ export default function CreatePresetScreen({ navigation, route }: Props) {
   const phaseCount = durationElements.length;
   const canSave = name.trim().length > 0 && elements.length > 0;
 
-  const handleAddDuration = (type: DurationType) => {
-    setNewDurationType(type);
+  const handleOpenAddPhase = () => {
     setEditingElementIndex(null);
     setDurationEditorVisible(true);
   };
 
-  const handleAddSound = () => {
+  const handleOpenAddSound = () => {
     setEditingElementIndex(null);
     setSoundPickerVisible(true);
   };
 
-  const handleSaveDuration = (phaseName: string, type: DurationType, durationMs: number) => {
+  const insertOrAppend = (newEl: BuilderElement) => {
+    setElements((prev) => {
+      if (addInsertIndex === null) return [...prev, newEl];
+      return [...prev.slice(0, addInsertIndex), newEl, ...prev.slice(addInsertIndex)];
+    });
+    setAddInsertIndex(null);
+  };
+
+  const handleSaveDuration = (phaseName: string, type: DurationType, durationMs: number, soundConfigs: SoundConfig[]) => {
     const config: DurationConfig = {
       type,
       durationMillis: durationMs,
       name: phaseName,
-      soundConfigs: [],
+      soundConfigs,
     };
 
     if (editingElementIndex !== null) {
       setElements((prev) =>
         prev.map((e, i) => {
           if (i !== editingElementIndex || e.kind !== 'duration') return e;
-          return { ...e, config: { ...config, soundConfigs: e.config.soundConfigs } };
+          return { ...e, config };
         })
       );
     } else {
-      setElements((prev) => [...prev, { kind: 'duration', id: generateUUID(), config }]);
+      insertOrAppend({ kind: 'duration', id: generateUUID(), config });
     }
   };
 
@@ -134,34 +127,13 @@ export default function CreatePresetScreen({ navigation, route }: Props) {
         )
       );
     } else {
-      setElements((prev) => [...prev, { kind: 'sound', id: generateUUID(), name: soundName, soundId }]);
+      insertOrAppend({ kind: 'sound', id: generateUUID(), name: soundName, soundId });
     }
   };
 
   const removeElement = useCallback((index: number) => {
     setElements((prev) => prev.filter((_, i) => i !== index));
   }, []);
-
-  const handleRemovePhaseSound = useCallback((phaseIndex: number, soundIndex: number) => {
-    setElements((prev) =>
-      prev.map((e, i) => {
-        if (i !== phaseIndex || e.kind !== 'duration') return e;
-        return { ...e, config: { ...e.config, soundConfigs: e.config.soundConfigs.filter((_, si) => si !== soundIndex) } };
-      })
-    );
-  }, []);
-
-  const handleSavePhaseSound = useCallback((config: SoundConfig) => {
-    setElements((prev) =>
-      prev.map((e, i) => {
-        if (i !== editingPhaseIndex || e.kind !== 'duration') return e;
-        const sounds = editingSoundIndex !== null
-          ? e.config.soundConfigs.map((sc, si) => si === editingSoundIndex ? config : sc)
-          : [...e.config.soundConfigs, config];
-        return { ...e, config: { ...e.config, soundConfigs: sounds } };
-      })
-    );
-  }, [editingPhaseIndex, editingSoundIndex]);
 
   const handleSave = async () => {
     const presetElements: PresetElement[] = elements.map((el): PresetElement => {
@@ -210,181 +182,134 @@ export default function CreatePresetScreen({ navigation, route }: Props) {
       ? elements[editingElementIndex] as BuilderElement & { kind: 'sound' }
       : null;
 
-  const editingPhaseSound =
-    editingPhaseIndex !== null &&
-    editingSoundIndex !== null &&
-    elements[editingPhaseIndex]?.kind === 'duration'
-      ? (elements[editingPhaseIndex] as BuilderElement & { kind: 'duration' }).config.soundConfigs[editingSoundIndex]
-      : undefined;
+  const openInsertAt = useCallback((index: number) => {
+    setEditingElementIndex(null);
+    setAddInsertIndex(index);
+    setAddElementVisible(true);
+  }, []);
 
   const renderItem = useCallback(({ item, drag, isActive, getIndex }: RenderItemParams<BuilderElement>) => {
     const index = getIndex() ?? 0;
 
+    // "+ Add here" affordance between adjacent items (above every item except the first)
+    const insertButton = index > 0 ? (
+      <Pressable
+        onPress={() => openInsertAt(index)}
+        style={{
+          alignSelf: 'center',
+          paddingHorizontal: spacing.md,
+          paddingVertical: spacing.xs - 1,
+          borderRadius: radius.sm,
+          borderWidth: 1,
+          borderColor: c.line,
+          borderStyle: 'dashed',
+          marginVertical: spacing.xs - 2,
+        }}
+      >
+        <Text style={[typography.meta, { color: c.textMute, opacity: 0.7 }]}>+ Add here</Text>
+      </Pressable>
+    ) : null;
+
     if (item.kind === 'sound') {
-      const sound = getSoundById(item.soundId);
       return (
         <ScaleDecorator>
-          <Pressable
-            onPress={() => { setEditingElementIndex(index); setSoundPickerVisible(true); }}
-            onLongPress={drag}
-            disabled={isActive}
-            style={{
-              backgroundColor: isActive ? c.surfaceVariant : c.surface,
-              borderRadius: 8,
-              paddingVertical: 10,
-              paddingHorizontal: 14,
-              marginBottom: 6,
-              flexDirection: 'row',
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
-          >
-            <Pressable onLongPress={drag} disabled={isActive} hitSlop={12} style={{ paddingRight: 12 }}>
-              <Text style={{ fontSize: 20, color: c.onSurface, opacity: 0.4 }}>≡</Text>
-            </Pressable>
-            <Text style={{ fontSize: 14, marginRight: 6 }}>🔔</Text>
-            <Text style={{ flex: 1, fontSize: 13, color: c.onSurface, fontWeight: '500' }}>
-              {item.name} · {sound?.name ?? 'Unknown'}
-            </Text>
-            <Pressable onPress={() => removeElement(index)} hitSlop={8}>
+          {insertButton}
+          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: spacing.xs }}>
+            <View style={{ flex: 1 }}>
+              <SoundMarker
+                soundId={item.soundId}
+                name={item.name}
+                mode="editor"
+                onEdit={() => { setEditingElementIndex(index); setSoundPickerVisible(true); }}
+                onDrag={drag}
+                isDragging={isActive}
+              />
+            </View>
+            <Pressable onPress={() => removeElement(index)} hitSlop={8} style={{ marginLeft: spacing.sm }}>
               <Text style={{ color: c.error, fontSize: 18 }}>⊖</Text>
             </Pressable>
-          </Pressable>
+          </View>
         </ScaleDecorator>
       );
     }
 
     const cfg = item.config;
-    const typeColor = cfg.type === 'WARMUP' ? c.warmup : cfg.type === 'INFINITE' ? c.infinite : c.accent;
-
     return (
       <ScaleDecorator>
-        <View style={{ backgroundColor: isActive ? c.surfaceVariant : c.surface, borderRadius: 12, padding: 14, marginBottom: 6 }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-            <Pressable onLongPress={drag} disabled={isActive} hitSlop={12} style={{ paddingRight: 10 }}>
-              <Text style={{ fontSize: 20, color: c.onSurface, opacity: 0.4 }}>≡</Text>
-            </Pressable>
-            <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: typeColor, justifyContent: 'center', alignItems: 'center', marginRight: 12 }}>
-              <Text style={{ fontSize: 16, color: '#fff' }}>⏱</Text>
-            </View>
-            <Pressable
-              style={{ flex: 1 }}
-              onPress={() => {
+        {insertButton}
+        <View style={{ flexDirection: 'row', alignItems: 'flex-start', marginBottom: spacing.xs }}>
+          <View style={{ flex: 1 }}>
+            <PhaseChip
+              type={cfg.type}
+              name={cfg.name}
+              durationMs={cfg.type === 'INFINITE' ? null : cfg.durationMillis}
+              attachedSounds={cfg.soundConfigs.map(soundConfigToLabel)}
+              mode="editor"
+              onEdit={() => {
                 setEditingElementIndex(index);
-                setNewDurationType(cfg.type);
                 setDurationEditorVisible(true);
               }}
-            >
-              <Text style={{ fontSize: 15, fontWeight: '600', color: c.onBackground }}>{cfg.name}</Text>
-              <Text style={{ fontSize: 12, color: c.onSurface }}>
-                {cfg.type === 'INFINITE' ? 'Infinite' : formatPhaseDuration(cfg.durationMillis)} · {cfg.type.toLowerCase().replace('_', ' ')}
-              </Text>
-            </Pressable>
-            <Pressable onPress={() => removeElement(index)} hitSlop={8} style={{ marginLeft: 12 }}>
-              <Text style={{ color: c.error, fontSize: 18 }}>⊖</Text>
-            </Pressable>
+              onDrag={drag}
+              isDragging={isActive}
+            />
           </View>
-
-          {/* Inline phase sounds */}
-          <View style={{ marginTop: 10, marginLeft: 56 }}>
-            {cfg.soundConfigs.map((sc, si) => (
-              <View
-                key={si}
-                style={{
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  backgroundColor: c.surfaceVariant,
-                  borderRadius: 8,
-                  paddingHorizontal: 10,
-                  paddingVertical: 7,
-                  marginBottom: 4,
-                }}
-              >
-                <Text style={{ fontSize: 13, flex: 1, color: c.onBackground }}>{getPhaseSoundLabel(sc)}</Text>
-                <Pressable
-                  hitSlop={8}
-                  onPress={() => { setEditingPhaseIndex(index); setEditingSoundIndex(si); setIntervalSoundVisible(true); }}
-                  style={{ marginRight: 10 }}
-                >
-                  <Text style={{ fontSize: 14, color: c.primary }}>✏</Text>
-                </Pressable>
-                <Pressable hitSlop={8} onPress={() => handleRemovePhaseSound(index, si)}>
-                  <Text style={{ color: c.error, fontSize: 16 }}>⊖</Text>
-                </Pressable>
-              </View>
-            ))}
-            <Pressable
-              onPress={() => { setEditingPhaseIndex(index); setEditingSoundIndex(null); setIntervalSoundVisible(true); }}
-              style={{
-                flexDirection: 'row',
-                alignItems: 'center',
-                alignSelf: 'flex-start',
-                paddingVertical: 6,
-                paddingHorizontal: 10,
-                backgroundColor: c.surfaceVariant,
-                borderRadius: 8,
-                marginTop: cfg.soundConfigs.length > 0 ? 2 : 0,
-              }}
-            >
-              <Text style={{ fontSize: 13, color: c.primary, fontWeight: '600' }}>+ Add sound</Text>
-            </Pressable>
-          </View>
+          <Pressable onPress={() => removeElement(index)} hitSlop={8} style={{ marginLeft: spacing.sm, marginTop: spacing.xs + 2 }}>
+            <Text style={{ color: c.error, fontSize: 18 }}>⊖</Text>
+          </Pressable>
         </View>
       </ScaleDecorator>
     );
-  }, [c, removeElement, handleRemovePhaseSound]);
+  }, [c, removeElement, openInsertAt]);
 
   const listHeader = useMemo(() => (
-    <View style={{ padding: 16 }}>
-      {/* Preset Details */}
-      <View style={{ backgroundColor: c.surface, borderRadius: 12, padding: 16, marginBottom: 16 }}>
+    <View style={{ padding: spacing.base }}>
+      {/* Preset details */}
+      <View style={{ backgroundColor: c.surface, borderRadius: radius.md, padding: spacing.base, marginBottom: spacing.base }}>
         <TextInput
           value={name}
           onChangeText={setName}
           placeholder="Preset Name"
-          placeholderTextColor={c.onSurface}
+          placeholderTextColor={c.textMute}
           style={{
-            backgroundColor: c.surfaceVariant,
-            borderRadius: 8,
-            padding: 12,
+            backgroundColor: c.surface2,
+            borderRadius: radius.sm,
+            padding: spacing.md,
             color: c.onBackground,
             fontSize: 16,
-            marginBottom: 10,
+            marginBottom: spacing.sm,
           }}
         />
         <TextInput
           value={description}
           onChangeText={setDescription}
           placeholder="Description (optional)"
-          placeholderTextColor={c.onSurface}
+          placeholderTextColor={c.textMute}
           multiline
           style={{
-            backgroundColor: c.surfaceVariant,
-            borderRadius: 8,
-            padding: 12,
+            backgroundColor: c.surface2,
+            borderRadius: radius.sm,
+            padding: spacing.md,
             color: c.onBackground,
-            fontSize: 16,
-            minHeight: 60,
+            fontSize: 15,
+            minHeight: 56,
           }}
         />
       </View>
 
       {/* Elements header */}
-      <View style={{ marginBottom: 12 }}>
-        <Text style={{ fontSize: 18, fontWeight: '700', color: c.onBackground }}>
-          Meditation Elements
-        </Text>
+      <View style={{ marginBottom: spacing.sm }}>
+        <Text style={[typography.section, { color: c.onBackground }]}>Meditation Phases</Text>
         {phaseCount > 0 && (
-          <Text style={{ fontSize: 13, color: c.onSurface, marginTop: 2 }}>
+          <Text style={[typography.meta, { color: c.textMute, marginTop: 2 }]}>
             {totalLabel} · {phaseCount} {phaseCount === 1 ? 'phase' : 'phases'}
           </Text>
         )}
       </View>
 
       {elements.length === 0 && (
-        <View style={{ backgroundColor: c.surface, borderRadius: 12, padding: 24, alignItems: 'center', marginBottom: 8 }}>
-          <Text style={{ color: c.onSurface, textAlign: 'center' }}>
-            Add sounds and meditation phases to build your preset.
+        <View style={{ backgroundColor: c.surface, borderRadius: radius.md, padding: spacing.lg, alignItems: 'center', marginBottom: spacing.sm }}>
+          <Text style={[typography.body, { color: c.textMute, textAlign: 'center' }]}>
+            Add phases and sound markers to build your preset.
           </Text>
         </View>
       )}
@@ -392,21 +317,21 @@ export default function CreatePresetScreen({ navigation, route }: Props) {
   ), [c, name, description, phaseCount, totalLabel, elements.length]);
 
   const listFooter = useMemo(() => (
-    <View style={{ paddingHorizontal: 16 }}>
+    <View style={{ paddingHorizontal: spacing.base }}>
       <Pressable
-        onPress={() => setAddElementVisible(true)}
+        onPress={() => { setAddInsertIndex(null); setAddElementVisible(true); }}
         style={{
           backgroundColor: c.surface,
-          borderRadius: 12,
-          borderWidth: 1.5,
-          borderColor: c.surfaceVariant,
+          borderRadius: radius.md,
+          borderWidth: 1,
+          borderColor: c.line,
           borderStyle: 'dashed',
-          padding: 16,
+          paddingVertical: spacing.md,
           alignItems: 'center',
-          marginBottom: 8,
+          marginBottom: spacing.sm,
         }}
       >
-        <Text style={{ color: c.primary, fontSize: 15, fontWeight: '600' }}>+ Add Element</Text>
+        <Text style={[typography.bodyEm, { color: c.accent }]}>+ Add Element</Text>
       </Pressable>
       <View style={{ height: 100 }} />
     </View>
@@ -415,11 +340,11 @@ export default function CreatePresetScreen({ navigation, route }: Props) {
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: c.background }}>
       {/* Header */}
-      <View style={{ flexDirection: 'row', alignItems: 'center', padding: 16 }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', padding: spacing.base }}>
         <Pressable onPress={() => navigation.goBack()} hitSlop={8}>
-          <Text style={{ fontSize: 24, color: c.onSurface }}>✕</Text>
+          <Text style={{ fontSize: 22, color: c.textDim }}>✕</Text>
         </Pressable>
-        <Text style={{ flex: 1, textAlign: 'center', fontSize: 20, fontWeight: '600', color: c.onBackground }}>
+        <Text style={[typography.section, { flex: 1, textAlign: 'center', color: c.onBackground }]}>
           {isEditing ? 'Edit Preset' : 'Create Preset'}
         </Text>
         <View style={{ width: 24 }} />
@@ -432,29 +357,24 @@ export default function CreatePresetScreen({ navigation, route }: Props) {
         onDragEnd={({ data }) => setElements(data)}
         ListHeaderComponent={listHeader}
         ListFooterComponent={listFooter}
-        contentContainerStyle={{ paddingHorizontal: 0 }}
+        contentContainerStyle={{ paddingHorizontal: spacing.base }}
         containerStyle={{ flex: 1 }}
-        style={{ paddingHorizontal: 16 }}
       />
 
       {/* Save Button */}
-      <View style={{ padding: 16, backgroundColor: c.background }}>
+      <View style={{ padding: spacing.base, backgroundColor: c.background }}>
         <Pressable
           onPress={handleSave}
           disabled={!canSave}
           style={{
             backgroundColor: c.primaryContainer,
-            borderRadius: 24,
-            padding: 16,
+            borderRadius: radius.pill,
+            padding: spacing.base,
             alignItems: 'center',
-            flexDirection: 'row',
-            justifyContent: 'center',
             opacity: canSave ? 1 : 0.4,
           }}
         >
-          <Text style={{ color: c.onPrimary, fontSize: 16, fontWeight: '600' }}>
-            ✓ Save Preset
-          </Text>
+          <Text style={[typography.bodyEm, { color: c.onPrimary }]}>✓ Save Preset</Text>
         </Pressable>
       </View>
 
@@ -462,34 +382,28 @@ export default function CreatePresetScreen({ navigation, route }: Props) {
       <AddElementSheet
         visible={addElementVisible}
         onClose={() => setAddElementVisible(false)}
-        onAddSound={handleAddSound}
-        onAddDuration={handleAddDuration}
+        onAddPhase={handleOpenAddPhase}
+        onAddSoundMarker={handleOpenAddSound}
       />
 
       <DurationEditor
         visible={durationEditorVisible}
-        onClose={() => { setDurationEditorVisible(false); setEditingElementIndex(null); }}
+        onClose={() => { setDurationEditorVisible(false); setEditingElementIndex(null); setAddInsertIndex(null); }}
         onSave={handleSaveDuration}
         initialName={editingDurationElement?.config.name ?? 'Meditation'}
-        initialType={editingDurationElement?.config.type ?? newDurationType}
+        initialType={editingDurationElement?.config.type ?? 'NORMAL'}
         initialDurationMs={editingDurationElement?.config.durationMillis ?? 600_000}
+        initialSoundConfigs={editingDurationElement?.config.soundConfigs ?? []}
         title={editingElementIndex !== null ? 'Edit Phase' : 'Add Phase'}
       />
 
       <SoundPickerDialog
         visible={soundPickerVisible}
-        onClose={() => { setSoundPickerVisible(false); setEditingElementIndex(null); }}
+        onClose={() => { setSoundPickerVisible(false); setEditingElementIndex(null); setAddInsertIndex(null); }}
         onSave={handleSaveSound}
         initialName={editingSoundElement?.name ?? 'Sound'}
         initialSoundId={editingSoundElement?.soundId ?? 1}
         title={editingElementIndex !== null ? 'Edit Sound' : 'Add Sound'}
-      />
-
-      <IntervalSoundDialog
-        visible={intervalSoundVisible}
-        onClose={() => { setIntervalSoundVisible(false); setEditingPhaseIndex(null); setEditingSoundIndex(null); }}
-        onSave={handleSavePhaseSound}
-        initialConfig={editingPhaseSound}
       />
     </SafeAreaView>
   );

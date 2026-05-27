@@ -18,6 +18,16 @@ export const oceanTheme: Theme = {
     infinite: '#4DAAAA',
     favorite: '#E05555',
     error: '#CF6679',
+    surface2: '#2D3F52',
+    surface3: '#374D62',
+    line: '#3A4F62',
+    textDim: '#9AAAB8',
+    textMute: '#6A7A88',
+    tealSoft: '#3A6478',
+    tealDeep: '#1F3A45',
+    warmBright: '#DCA55C',
+    gold: '#C8954C',
+    goldPale: '#785830',
   },
 };
 
@@ -39,6 +49,16 @@ export const midnightTheme: Theme = {
     infinite: '#5EC4C4',
     favorite: '#FF6B8A',
     error: '#FF6B8A',
+    surface2: '#252540',
+    surface3: '#2F2F50',
+    line: '#3A3A60',
+    textDim: '#9090B8',
+    textMute: '#606080',
+    tealSoft: '#3A8A8A',
+    tealDeep: '#1A4A4A',
+    warmBright: '#EEB068',
+    gold: '#C8944C',
+    goldPale: '#785830',
   },
 };
 
@@ -60,6 +80,16 @@ export const forestTheme: Theme = {
     infinite: '#5AB8A0',
     favorite: '#E06060',
     error: '#CF6679',
+    surface2: '#2F4030',
+    surface3: '#384A38',
+    line: '#3A4C3A',
+    textDim: '#90B090',
+    textMute: '#607060',
+    tealSoft: '#4A8A4A',
+    tealDeep: '#284A28',
+    warmBright: '#E4B068',
+    gold: '#C8944C',
+    goldPale: '#785830',
   },
 };
 
@@ -81,6 +111,16 @@ export const sunriseTheme: Theme = {
     infinite: '#5A9E9E',
     favorite: '#D05050',
     error: '#C04040',
+    surface2: '#F5EDE4',
+    surface3: '#EADDD0',
+    line: '#E0D0C0',
+    textDim: '#8A7A70',
+    textMute: '#B0A098',
+    tealSoft: '#5A9E9E',
+    tealDeep: '#3A7070',
+    warmBright: '#E09860',
+    gold: '#C87E40',
+    goldPale: '#F5D0A0',
   },
 };
 
@@ -102,10 +142,52 @@ export const monochromeTheme: Theme = {
     infinite: '#558888',
     favorite: '#CC4444',
     error: '#CC4444',
+    surface2: '#F0F0F0',
+    surface3: '#E0E0E0',
+    line: '#DADADA',
+    textDim: '#888888',
+    textMute: '#AAAAAA',
+    tealSoft: '#446666',
+    tealDeep: '#224444',
+    warmBright: '#CC9940',
+    gold: '#AA8840',
+    goldPale: '#D4B870',
+  },
+};
+
+export const calmTheme: Theme = {
+  id: 'calm',
+  name: 'Calm',
+  isDark: true,
+  colors: {
+    background: '#0b1220',
+    surface: '#162033',
+    surfaceVariant: '#1c2942',
+    primary: '#5cc4d1',
+    primaryContainer: '#3a8a93',
+    onPrimary: '#FFFFFF',
+    onBackground: '#e8edf7',
+    onSurface: '#9aa6c2',
+    accent: '#5cc4d1',
+    warmup: '#d2a06b',
+    infinite: '#5cc4d1',
+    favorite: '#e07a7a',
+    error: '#e07a7a',
+    surface2: '#1c2942',
+    surface3: '#243353',
+    line: '#2a3a5c',
+    textDim: '#9aa6c2',
+    textMute: '#6c7a99',
+    tealSoft: '#3a8a93',
+    tealDeep: '#1f4d54',
+    warmBright: '#e8b880',
+    gold: '#d4a843',
+    goldPale: '#f5d896',
   },
 };
 
 export const allThemes: Theme[] = [
+  calmTheme,
   oceanTheme,
   midnightTheme,
   forestTheme,
@@ -114,5 +196,5 @@ export const allThemes: Theme[] = [
 ];
 
 export function getThemeById(id: string): Theme {
-  return allThemes.find((t) => t.id === id) ?? oceanTheme;
+  return allThemes.find((t) => t.id === id) ?? calmTheme;
 }

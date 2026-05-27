@@ -1,5 +1,5 @@
 import React, { useState, useCallback } from 'react';
-import { View, Text, Pressable, ScrollView, Switch, Platform, Alert, AppState } from 'react-native';
+import { View, Text, Pressable, ScrollView, Switch, TextInput, Platform, Alert, AppState, Share } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/navigation';
@@ -8,9 +8,10 @@ import { allThemes } from '../theme/themes';
 import { useSettingsStore } from '../stores/settingsStore';
 import { useAchievementStore } from '../stores/achievementStore';
 import { getAllAchievements } from '../data/achievements';
-import Constants from 'expo-constants';
+import pkg from '../../package.json';
 import * as Dnd from '../../modules/dnd';
 import { getDayName } from '../services/reminderService';
+import { getRecentLogs, clearLogs } from '../utils/logger';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Settings'>;
 
@@ -27,6 +28,11 @@ export default function SettingsScreen({ navigation }: Props) {
   const reminder = useSettingsStore((s) => s.reminder);
   const achievementsEnabled = useSettingsStore((s) => s.achievementsEnabled);
   const setAchievementsEnabled = useSettingsStore((s) => s.setAchievementsEnabled);
+  const demoStreakOverride = useSettingsStore((s) => s.demoStreakOverride);
+  const setDemoStreakOverride = useSettingsStore((s) => s.setDemoStreakOverride);
+  const [demoStreakInput, setDemoStreakInput] = useState(
+    demoStreakOverride !== null ? String(demoStreakOverride) : ''
+  );
 
   const [dndAccessGranted, setDndAccessGranted] = useState(() =>
     Platform.OS === 'android' ? Dnd.isAccessGranted() : false
@@ -84,7 +90,7 @@ export default function SettingsScreen({ navigation }: Props) {
     return { total, unlockedCount };
   }, [achievementUnlocked]);
 
-  const appVersion = Constants.expoConfig?.version ?? '1.0.0';
+  const appVersion = pkg.version;
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: c.background }}>
@@ -277,7 +283,7 @@ export default function SettingsScreen({ navigation }: Props) {
         <Text style={{ fontSize: 13, fontWeight: '600', color: c.onSurface, marginBottom: 8, marginLeft: 4 }}>
           ABOUT
         </Text>
-        <View style={{ backgroundColor: c.surface, borderRadius: 12, padding: 16, alignItems: 'center' }}>
+        <View style={{ backgroundColor: c.surface, borderRadius: 12, padding: 16, alignItems: 'center', marginBottom: 24 }}>
           <Text style={{ fontSize: 20, fontWeight: '700', color: c.onBackground, marginBottom: 4 }}>
             SpiritLog
           </Text>
@@ -288,6 +294,130 @@ export default function SettingsScreen({ navigation }: Props) {
             A mindful meditation timer to help you build a consistent practice.
           </Text>
         </View>
+
+        {/* Debug Section */}
+        <Text style={{ fontSize: 13, fontWeight: '600', color: c.onSurface, marginBottom: 8, marginLeft: 4 }}>
+          DEBUG
+        </Text>
+
+        {/* Demo streak override */}
+        <View style={{ backgroundColor: c.surface, borderRadius: 12, padding: 16, marginBottom: 8 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10 }}>
+            <Text style={{ fontSize: 22, marginRight: 12 }}>🔥</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={{ color: c.onBackground, fontSize: 14 }}>Demo streak override</Text>
+              <Text style={{ color: c.onSurface, fontSize: 11 }}>
+                {demoStreakOverride !== null
+                  ? `Forcing streak = ${demoStreakOverride} on home`
+                  : 'Empty = use real streak'}
+              </Text>
+            </View>
+          </View>
+          <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
+            <TextInput
+              value={demoStreakInput}
+              onChangeText={setDemoStreakInput}
+              onBlur={() => {
+                const trimmed = demoStreakInput.trim();
+                if (trimmed === '') {
+                  setDemoStreakOverride(null);
+                } else {
+                  const n = parseInt(trimmed, 10);
+                  if (!isNaN(n) && n >= 0) setDemoStreakOverride(n);
+                }
+              }}
+              onSubmitEditing={() => {
+                const trimmed = demoStreakInput.trim();
+                if (trimmed === '') {
+                  setDemoStreakOverride(null);
+                } else {
+                  const n = parseInt(trimmed, 10);
+                  if (!isNaN(n) && n >= 0) setDemoStreakOverride(n);
+                }
+              }}
+              keyboardType="number-pad"
+              placeholder="(empty = real)"
+              placeholderTextColor={c.onSurface}
+              style={{
+                flex: 1,
+                backgroundColor: c.surfaceVariant,
+                color: c.onBackground,
+                borderRadius: 8,
+                paddingHorizontal: 12,
+                paddingVertical: 10,
+                fontSize: 14,
+              }}
+            />
+            <Pressable
+              onPress={() => {
+                setDemoStreakInput('');
+                setDemoStreakOverride(null);
+              }}
+              style={{ paddingHorizontal: 12, paddingVertical: 10, backgroundColor: c.surfaceVariant, borderRadius: 8 }}
+            >
+              <Text style={{ color: c.onSurface, fontSize: 14 }}>Clear</Text>
+            </Pressable>
+          </View>
+          <View style={{ flexDirection: 'row', gap: 6, marginTop: 10, flexWrap: 'wrap' }}>
+            {[0, 1, 7, 30, 100, 365, 800].map((n) => (
+              <Pressable
+                key={n}
+                onPress={() => {
+                  setDemoStreakInput(String(n));
+                  setDemoStreakOverride(n);
+                }}
+                style={{
+                  paddingHorizontal: 10,
+                  paddingVertical: 6,
+                  backgroundColor: demoStreakOverride === n ? c.primaryContainer : c.surfaceVariant,
+                  borderRadius: 14,
+                }}
+              >
+                <Text
+                  style={{
+                    color: demoStreakOverride === n ? c.onPrimary : c.onSurface,
+                    fontSize: 12,
+                    fontWeight: '600',
+                  }}
+                >
+                  {n}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+        </View>
+
+        <Pressable
+          onPress={async () => {
+            try {
+              await Share.share({ message: getRecentLogs() });
+            } catch (e: any) {
+              Alert.alert('Share failed', e?.message ?? 'Could not share logs');
+            }
+          }}
+          style={{ backgroundColor: c.surface, borderRadius: 12, padding: 16, marginBottom: 8, flexDirection: 'row', alignItems: 'center' }}
+        >
+          <Text style={{ fontSize: 22, marginRight: 12 }}>🐛</Text>
+          <View style={{ flex: 1 }}>
+            <Text style={{ color: c.onBackground, fontSize: 14 }}>Share recent logs</Text>
+            <Text style={{ color: c.onSurface, fontSize: 11 }}>In-memory ring buffer (last 500 events)</Text>
+          </View>
+          <Text style={{ color: c.onSurface, fontSize: 18 }}>›</Text>
+        </Pressable>
+        <Pressable
+          onPress={() => {
+            Alert.alert('Clear logs?', 'Removes the in-memory log buffer.', [
+              { text: 'Cancel', style: 'cancel' },
+              { text: 'Clear', style: 'destructive', onPress: () => clearLogs() },
+            ]);
+          }}
+          style={{ backgroundColor: c.surface, borderRadius: 12, padding: 16, marginBottom: 24, flexDirection: 'row', alignItems: 'center' }}
+        >
+          <Text style={{ fontSize: 22, marginRight: 12 }}>🧹</Text>
+          <View style={{ flex: 1 }}>
+            <Text style={{ color: c.onBackground, fontSize: 14 }}>Clear logs</Text>
+          </View>
+        </Pressable>
       </ScrollView>
     </SafeAreaView>
   );

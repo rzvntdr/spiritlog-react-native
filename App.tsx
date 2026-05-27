@@ -11,6 +11,10 @@ import { useBackupStore } from './src/stores/backupStore';
 import { useAchievementStore } from './src/stores/achievementStore';
 import { requestNotificationPermissions } from './src/services/notificationService';
 import AppNavigator from './src/navigation/navigation';
+import { createLogger, installGlobalErrorHandlers } from './src/utils/logger';
+
+installGlobalErrorHandlers();
+const log = createLogger('app');
 
 function AppContent() {
   const { theme } = useTheme();
@@ -29,19 +33,28 @@ export default function App() {
 
   useEffect(() => {
     (async () => {
-      await loadSettings();
-      requestNotificationPermissions();
+      log.info('boot: start');
+      try {
+        await loadSettings();
+        log.debug('boot: settings loaded');
+        requestNotificationPermissions();
 
-      // Load data for achievement context, then trigger retroactive checks
-      await Promise.all([
-        useSessionStore.getState().loadSessions(),
-        useSessionStore.getState().loadStats(),
-        usePresetStore.getState().loadPresets(),
-        useBackupStore.getState().loadPersistedState(),
-        useBackupStore.getState().signInSilently().catch(() => {}),
-        useAchievementStore.getState().loadUnlocked(),
-      ]);
-      await useAchievementStore.getState().triggerCheck({ type: 'app_start' });
+        await Promise.all([
+          useSessionStore.getState().loadSessions(),
+          useSessionStore.getState().loadStats(),
+          usePresetStore.getState().loadPresets(),
+          useBackupStore.getState().loadPersistedState(),
+          useBackupStore.getState().signInSilently().catch((e) => {
+            log.warn('boot: signInSilently failed', e);
+          }),
+          useAchievementStore.getState().loadUnlocked(),
+        ]);
+        log.debug('boot: stores loaded');
+        await useAchievementStore.getState().triggerCheck({ type: 'app_start' });
+        log.info('boot: complete');
+      } catch (e) {
+        log.error('boot: failed', e);
+      }
     })();
   }, [loadSettings]);
 

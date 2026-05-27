@@ -4,6 +4,7 @@ import { NavigationContainer } from '@react-navigation/native';
 import { useTheme } from '../theme/ThemeContext';
 
 import HomeScreen from '../screens/HomeScreen';
+import PreSessionScreen from '../screens/PreSessionScreen';
 import TimerScreen from '../screens/TimerScreen';
 import CreatePresetScreen from '../screens/CreatePresetScreen';
 import JourneyScreen from '../screens/JourneyScreen';
@@ -16,6 +17,7 @@ import AchievementToast from '../components/achievement/AchievementToast';
 
 export type RootStackParamList = {
   Home: undefined;
+  PreSession: { presetId: string };
   Timer: { presetId: string };
   CreatePreset: undefined;
   EditPreset: { presetId: string };
@@ -60,6 +62,7 @@ export default function AppNavigator() {
         }}
       >
         <Stack.Screen name="Home" component={HomeScreen} />
+        <Stack.Screen name="PreSession" component={PreSessionScreen} />
         <Stack.Screen name="Timer" component={TimerScreen} />
         <Stack.Screen
           name="CreatePreset"
