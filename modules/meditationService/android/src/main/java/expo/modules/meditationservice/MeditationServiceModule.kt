@@ -22,6 +22,7 @@ class SoundScheduleRecord : Record {
   @Field var intervalMs: Double = 0.0
   @Field var minIntervalMs: Double = 0.0
   @Field var maxIntervalMs: Double = 0.0
+  @Field var offsetMs: Double = 0.0
 }
 
 class MeditationServiceModule : Module() {
@@ -82,7 +83,8 @@ class MeditationServiceModule : Module() {
           soundId = it.soundId,
           intervalMs = it.intervalMs.toLong(),
           minIntervalMs = it.minIntervalMs.toLong(),
-          maxIntervalMs = it.maxIntervalMs.toLong()
+          maxIntervalMs = it.maxIntervalMs.toLong(),
+          offsetMs = it.offsetMs.toLong()
         )
       }
       MeditationForegroundService.instance?.setScheduleInternal(mapped)
@@ -102,6 +104,10 @@ class MeditationServiceModule : Module() {
 
     Function("setAmbientVolume") { volume: Double ->
       MeditationForegroundService.instance?.setAmbientVolumeInternal(volume.toFloat())
+    }
+
+    Function("setForeground") { foreground: Boolean ->
+      MeditationForegroundService.instance?.appForeground = foreground
     }
   }
 

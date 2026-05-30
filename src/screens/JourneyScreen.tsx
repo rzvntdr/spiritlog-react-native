@@ -175,6 +175,13 @@ export default function JourneyScreen({ navigation }: Props) {
             <Text style={[typography.bodyEm, { color: c.accent }]}>
               {item.session.duration} min
             </Text>
+            <Pressable
+              onPress={() => handleDeleteSession(item.session)}
+              hitSlop={8}
+              style={{ paddingHorizontal: spacing.xs, marginLeft: spacing.xs }}
+            >
+              <Text style={{ color: c.error, fontSize: 18 }}>✕</Text>
+            </Pressable>
           </Pressable>
         );
       }

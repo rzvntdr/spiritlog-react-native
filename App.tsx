@@ -12,6 +12,7 @@ import { useAchievementStore } from './src/stores/achievementStore';
 import { requestNotificationPermissions } from './src/services/notificationService';
 import AppNavigator from './src/navigation/navigation';
 import { createLogger, installGlobalErrorHandlers } from './src/utils/logger';
+import { pushWidgetUpdate } from './src/widget/widgetData';
 
 installGlobalErrorHandlers();
 const log = createLogger('app');
@@ -42,6 +43,7 @@ export default function App() {
         await Promise.all([
           useSessionStore.getState().loadSessions(),
           useSessionStore.getState().loadStats(),
+          useSessionStore.getState().loadLastShownStreakState(),
           usePresetStore.getState().loadPresets(),
           useBackupStore.getState().loadPersistedState(),
           useBackupStore.getState().signInSilently().catch((e) => {
@@ -51,6 +53,7 @@ export default function App() {
         ]);
         log.debug('boot: stores loaded');
         await useAchievementStore.getState().triggerCheck({ type: 'app_start' });
+        pushWidgetUpdate();
         log.info('boot: complete');
       } catch (e) {
         log.error('boot: failed', e);

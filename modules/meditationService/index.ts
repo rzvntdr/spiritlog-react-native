@@ -33,13 +33,15 @@ export type MeditationActionEvent = 'restart' | 'pausePlay' | 'stop' | 'skip';
  * - `FIXED_INTERVAL`  → `intervalMs`
  * - `RANDOM_INTERVAL` → `minIntervalMs` + `maxIntervalMs`
  * - `AMBIENT`         → no extra fields (looping playback)
+ * - `ONE_SHOT`        → `offsetMs` (fires once after this delay from setSchedule call)
  */
 export interface SoundScheduleEntry {
-  type: 'FIXED_INTERVAL' | 'RANDOM_INTERVAL' | 'AMBIENT';
+  type: 'FIXED_INTERVAL' | 'RANDOM_INTERVAL' | 'AMBIENT' | 'ONE_SHOT';
   soundId: number;
   intervalMs?: number;
   minIntervalMs?: number;
   maxIntervalMs?: number;
+  offsetMs?: number;
 }
 
 function call<T>(method: string, fn: () => T): T | undefined {
@@ -74,6 +76,7 @@ export function setSoundSchedule(entries: SoundScheduleEntry[]): void {
     intervalMs: e.intervalMs ?? 0,
     minIntervalMs: e.minIntervalMs ?? 0,
     maxIntervalMs: e.maxIntervalMs ?? 0,
+    offsetMs: e.offsetMs ?? 0,
   }));
   call('setSoundSchedule', () => Native?.setSoundSchedule(payload));
 }
@@ -95,6 +98,15 @@ export function resumeSoundSchedule(): void {
 
 export function setAmbientVolume(volume: number): void {
   call('setAmbientVolume', () => Native?.setAmbientVolume(volume));
+}
+
+/**
+ * Tell the native service whether the app is in the foreground. When foreground,
+ * the JS layer plays sound markers itself, so native suppresses its ONE_SHOT
+ * fallback to avoid doubling. When backgrounded, native plays markers on time.
+ */
+export function setForeground(foreground: boolean): void {
+  call('setForeground', () => Native?.setForeground(foreground));
 }
 
 export function addActionListener(

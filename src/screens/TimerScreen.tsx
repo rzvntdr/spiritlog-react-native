@@ -97,6 +97,11 @@ export default function TimerScreen({ navigation, route }: Props) {
 
   const tickRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const prevPhaseIndexRef = useRef(-1);
+  // Tracks when we went to background so we can detect "long-sleep catchup":
+  // if we were backgrounded long enough for native to have fired ONE_SHOT markers,
+  // skip JS-side playback (would otherwise replay the bell on screen unlock).
+  const backgroundedAtRef = useRef<number | null>(null);
+  const skipMarkersUntilRef = useRef<number>(0);
   const appStateRef = useRef(AppState.currentState);
   const dndActiveRef = useRef(dndActive);
   dndActiveRef.current = dndActive;
@@ -140,6 +145,10 @@ export default function TimerScreen({ navigation, route }: Props) {
     const subscription = AppState.addEventListener('change', (nextState: AppStateStatus) => {
       log.debug('AppState change', { from: appStateRef.current, to: nextState });
       if (appStateRef.current.match(/active/) && nextState.match(/inactive|background/)) {
+        backgroundedAtRef.current = Date.now();
+        // Hand marker playback to native: it owns the ONE_SHOT fallback while
+        // the JS thread is suspended in the background.
+        if (Platform.OS === 'android') MeditationService.setForeground(false);
         if (isActiveRef.current && !isPausedRef.current) {
           const remaining = getRemainingMs();
           if (remaining !== null && remaining > 0) {
@@ -149,6 +158,17 @@ export default function TimerScreen({ navigation, route }: Props) {
         }
       } else if (nextState === 'active') {
         cancelMeditationNotification();
+        if (Platform.OS === 'android') MeditationService.setForeground(true);
+        // Any return from background: native may have fired ONE_SHOT markers while
+        // we were away. As the engine catches up via elapsed-time ticks it will
+        // re-queue those markers; skip JS playback briefly so they don't ring twice.
+        const bgAt = backgroundedAtRef.current;
+        if (bgAt !== null) {
+          const elapsed = Date.now() - bgAt;
+          backgroundedAtRef.current = null;
+          skipMarkersUntilRef.current = Date.now() + 4_000;
+          log.info('catchup mode: will skip JS marker playback', { backgroundedMs: elapsed });
+        }
       }
       appStateRef.current = nextState;
     });
@@ -202,19 +222,31 @@ export default function TimerScreen({ navigation, route }: Props) {
     }
   }, [pendingSoundId, clearPendingSound]);
 
-  // Play sound marker elements — wait for the sound to finish, then advance
+  // Play sound marker elements — wait for the sound to finish, then advance.
+  // When the JS thread just woke up from a long background sleep, skip playback
+  // because the native ONE_SHOT scheduled for this marker has already fired.
   useEffect(() => {
     if (pendingSoundMarker !== null) {
+      const skip = Date.now() < skipMarkersUntilRef.current;
       clearPendingSoundMarker();
-      soundEngine.playSoundAndWait(pendingSoundMarker).then(() => {
+      if (skip) {
+        log.info('skipping JS marker playback (native ONE_SHOT covered it)', { soundId: pendingSoundMarker });
         soundMarkerFinished();
-      });
+      } else {
+        soundEngine.playSoundAndWait(pendingSoundMarker).then(() => {
+          soundMarkerFinished();
+        });
+      }
     }
   }, [pendingSoundMarker, clearPendingSoundMarker, soundMarkerFinished]);
 
   // Push the per-phase sound schedule to the native service whenever the
   // phase changes. The service handles timing + playback in native land so
   // sounds keep firing when JS is suspended in the background.
+  //
+  // Also schedules the NEXT sound-marker element (if any) as a ONE_SHOT at
+  // offsetMs = current phase duration. That way the bell between/after a phase
+  // plays on time even when Doze suspends the JS thread.
   useEffect(() => {
     if (Platform.OS !== 'android') return;
     const idx = engineState.currentElementIndex;
@@ -222,8 +254,8 @@ export default function TimerScreen({ navigation, route }: Props) {
     prevPhaseIndexRef.current = idx;
 
     const currentEl = elements[idx];
-    if (currentEl?.kind === 'duration' && currentEl.soundConfigs.length > 0) {
-      const entries = currentEl.soundConfigs.map((sc) => {
+    if (currentEl?.kind === 'duration') {
+      const entries: MeditationService.SoundScheduleEntry[] = currentEl.soundConfigs.map((sc) => {
         if (sc.type === 'FIXED_INTERVAL') {
           return {
             type: 'FIXED_INTERVAL' as const,
@@ -242,6 +274,19 @@ export default function TimerScreen({ navigation, route }: Props) {
         }
         return { type: 'AMBIENT' as const, soundId: sc.soundId };
       });
+
+      // If next element is a sound-marker and this phase has a finite duration,
+      // schedule the marker natively at offsetMs = phase duration. Native plays
+      // it on time regardless of JS suspension.
+      const nextEl = elements[idx + 1];
+      if (nextEl?.kind === 'sound' && currentEl.type !== 'INFINITE' && currentEl.durationMs > 0) {
+        entries.push({
+          type: 'ONE_SHOT',
+          soundId: nextEl.soundId,
+          offsetMs: currentEl.durationMs,
+        });
+      }
+
       MeditationService.setAmbientVolume(useSettingsStore.getState().ambientVolume);
       MeditationService.setSoundSchedule(entries);
     } else {
@@ -292,6 +337,8 @@ export default function TimerScreen({ navigation, route }: Props) {
     };
 
     MeditationService.start(buildState());
+    // We start in the foreground; native should not fire ONE_SHOT markers (JS owns them).
+    MeditationService.setForeground(true);
 
     // Push the schedule for the current phase. The phase-change effect already
     // ran (on mount) when the service wasn't running yet, so its schedule push

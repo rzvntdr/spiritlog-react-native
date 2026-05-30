@@ -24,6 +24,16 @@ interface SettingsState {
   ambientVolume: number;
   /** Debug-only: when set, HomeScreen's StreakHero uses this value instead of the real streak. */
   demoStreakOverride: number | null;
+  /** Debug-only: when set (and demo active), overrides the freeze count shown. null = derive from streak. */
+  demoFreezeOverride: number | null;
+  /** Custom template for the StreakHero subtitle. null = default ("DAYS IN A ROW"). Supports {streak} {best} {hours} {sessions}. */
+  streakHeroText: string | null;
+  /** Visual style for the StreakHero card. 'classic' = glow circles + sparkles. 'plant' = SVG plant that grows with the tier. */
+  streakArtStyle: 'classic' | 'plant';
+  /** Q2: number of consecutive streak days required to earn 1 freeze. Default 10. */
+  freezeEarnRate: number;
+  /** Which Lottie celebration theme plays on streak/freeze increments. */
+  celebrationAssetId: string;
   isLoaded: boolean;
 
   // Actions
@@ -36,6 +46,11 @@ interface SettingsState {
   setAchievementsEnabled: (value: boolean) => void;
   setAmbientVolume: (value: number) => void;
   setDemoStreakOverride: (value: number | null) => void;
+  setDemoFreezeOverride: (value: number | null) => void;
+  setStreakHeroText: (value: string | null) => void;
+  setStreakArtStyle: (value: 'classic' | 'plant') => void;
+  setFreezeEarnRate: (value: number) => void;
+  setCelebrationAssetId: (value: string) => void;
   loadSettings: () => Promise<void>;
 }
 
@@ -51,6 +66,11 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   achievementsEnabled: true,
   ambientVolume: 0.5,
   demoStreakOverride: null,
+  demoFreezeOverride: null,
+  streakHeroText: null,
+  streakArtStyle: 'classic',
+  freezeEarnRate: 10,
+  celebrationAssetId: 'burst',
   isLoaded: false,
 
   setThemeId: (id) => {
@@ -98,6 +118,33 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     persistSettings(get());
   },
 
+  setDemoFreezeOverride: (value) => {
+    set({ demoFreezeOverride: value === null ? null : Math.max(0, Math.floor(value)) });
+    persistSettings(get());
+  },
+
+  setStreakHeroText: (value) => {
+    const trimmed = value === null ? null : value.trim();
+    set({ streakHeroText: trimmed && trimmed.length > 0 ? trimmed : null });
+    persistSettings(get());
+  },
+
+  setStreakArtStyle: (value) => {
+    set({ streakArtStyle: value });
+    persistSettings(get());
+  },
+
+  setFreezeEarnRate: (value) => {
+    const clamped = Math.max(1, Math.min(30, Math.floor(value)));
+    set({ freezeEarnRate: clamped });
+    persistSettings(get());
+  },
+
+  setCelebrationAssetId: (value) => {
+    set({ celebrationAssetId: value });
+    persistSettings(get());
+  },
+
   loadSettings: async () => {
     try {
       const raw = await AsyncStorage.getItem(SETTINGS_KEY);
@@ -113,6 +160,11 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
           achievementsEnabled: parsed.achievementsEnabled ?? true,
           ambientVolume: parsed.ambientVolume ?? 0.5,
           demoStreakOverride: parsed.demoStreakOverride ?? null,
+          demoFreezeOverride: parsed.demoFreezeOverride ?? null,
+          streakHeroText: parsed.streakHeroText ?? null,
+          streakArtStyle: parsed.streakArtStyle ?? 'classic',
+          freezeEarnRate: typeof parsed.freezeEarnRate === 'number' ? parsed.freezeEarnRate : 10,
+          celebrationAssetId: parsed.celebrationAssetId ?? 'burst',
           isLoaded: true,
         });
       } else {
@@ -135,6 +187,11 @@ function persistSettings(state: SettingsState) {
     achievementsEnabled: state.achievementsEnabled,
     ambientVolume: state.ambientVolume,
     demoStreakOverride: state.demoStreakOverride,
+    demoFreezeOverride: state.demoFreezeOverride,
+    streakHeroText: state.streakHeroText,
+    streakArtStyle: state.streakArtStyle,
+    freezeEarnRate: state.freezeEarnRate,
+    celebrationAssetId: state.celebrationAssetId,
   };
   AsyncStorage.setItem(SETTINGS_KEY, JSON.stringify(data));
 }

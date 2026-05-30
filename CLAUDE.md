@@ -1,31 +1,5 @@
 # SpiritLog React Native — Claude Code guide
 
-## Design tokens
-
-All UI code must reference tokens, never hardcode values.
-
-```typescript
-import { typography, spacing, radius, elevation } from '@/theme/scale'; // theme-agnostic
-import { useTheme } from '@/theme/ThemeContext';                         // theme colors
-```
-
-- **Colors** → `theme.colors.<token>` via `useTheme()` (theme-dependent)
-- **Typography** → `typography.<variant>` from `scale.ts`
-- **Spacing** → `spacing.<key>` from `scale.ts`
-- **Radii** → `radius.<key>` from `scale.ts`
-- **Elevation** → `elevation.<key>` from `scale.ts`; for FAB add `shadowColor: theme.colors.accent`
-
-If a value you need is missing, add it to `src/theme/tokens.ts` (colors) or `src/theme/scale.ts` (everything else) first, then use it.
-
-## Theme system
-
-Five themes exist (`ocean`, `midnight`, `forest`, `sunrise`, `monochrome`) plus the new `calm` theme which is the primary design target. `ThemeColors` in `tokens.ts` is the interface all themes must satisfy — adding a new color field requires updating every theme.
-
-## Implementation plans
-
-Redesign plans live in `../spiritlog react native screen/plans/`. Execute them strictly in order (01 → 07). Each plan ends with a "Done when" checklist — verify before moving on.
-
-Current status: **01-design-tokens.md** complete.
 
 ## Installing on Razvan's phone (wireless ADB)
 
@@ -77,6 +51,18 @@ After successful pair, only the connect port matters.
 - [ ] In the private repo: `Settings → Secrets and variables → Actions → New repository secret` → name `PUBLIC_RELEASES_TOKEN`, paste PAT.
 
 Until those three are done, tag pushes still build the APK (private artifact) but the public-release step fails. The workflow goes red; re-push the tag after setup is complete.
+
+### End-of-task checklist (every meaningful change)
+
+After finishing a non-trivial change, before considering the task closed, ask yourself:
+
+1. **Does this deserve a CHANGELOG entry?** If yes, add a bullet under `## [Unreleased]` in `CHANGELOG.md`. Skip for: pure refactors with no user-visible delta, internal log additions, comment-only changes, build-script tweaks that don't affect output.
+2. **Does this deserve a version bump?** If yes, propose one to the user (don't bump silently) with a recommended level:
+   - `patch` (0.2.0 → 0.2.1): bug fixes, small UX polish, copy changes
+   - `minor` (0.2.0 → 0.3.0): new features, visible UI additions
+   - `major` (0.2.0 → 1.0.0): breaking changes or "we're ready" moments
+
+State the proposal as: "This change is _X_ — suggest bumping to _Y_, or keep as-is?" Don't bump without explicit confirmation.
 
 ### Cutting a release
 

@@ -77,11 +77,12 @@ class MeditationForegroundService : Service() {
   }
 
   data class ScheduleEntry(
-    val type: String,           // "FIXED_INTERVAL", "RANDOM_INTERVAL", "AMBIENT"
+    val type: String,           // "FIXED_INTERVAL", "RANDOM_INTERVAL", "AMBIENT", "ONE_SHOT"
     val soundId: Int,
     val intervalMs: Long,       // FIXED only
     val minIntervalMs: Long,    // RANDOM only
-    val maxIntervalMs: Long     // RANDOM only
+    val maxIntervalMs: Long,    // RANDOM only
+    val offsetMs: Long          // ONE_SHOT only — fire once after this delay
   )
 
   private inner class IntervalTracker(val schedule: ScheduleEntry) {
@@ -89,12 +90,24 @@ class MeditationForegroundService : Service() {
     var pausedRemainingMs: Long? = null
   }
 
+  /** Single-fire scheduled sound. Survives pause/resume by tracking remaining delay. */
+  private class OneShot(val soundId: Int, var fireAtUptimeMs: Long) {
+    var pausedRemainingMs: Long? = null
+  }
+
   private var wakeLock: PowerManager.WakeLock? = null
   private val soundHandler = Handler(Looper.getMainLooper())
   private val intervalTrackers = mutableListOf<IntervalTracker>()
+  private val oneShots = mutableListOf<OneShot>()
   private var ambientPlayer: MediaPlayer? = null
   private var ambientVolume: Float = 0.5f
   private var schedulePaused: Boolean = false
+  // ONE_SHOT markers are a BACKGROUND fallback. In the foreground the JS layer
+  // plays markers via soundEngine (with proper "wait for sound to finish" timing),
+  // so a foreground ONE_SHOT would double the bell. JS toggles this flag on
+  // AppState changes; when foreground, native skips ONE_SHOT playback.
+  @Volatile
+  var appForeground: Boolean = true
 
   override fun onBind(intent: Intent?): IBinder? = null
 
@@ -112,23 +125,34 @@ class MeditationForegroundService : Service() {
   }
 
   override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+    // CRITICAL: Android requires startForeground() to be called within ~10s of
+    // startForegroundService(), or it throws ForegroundServiceDidNotStartInTimeException
+    // and kills the app. Call it unconditionally as the first thing, regardless of
+    // action — even for ACTION_STOP we need to satisfy the contract before tearing
+    // down, because the JS bridge invokes ContextCompat.startForegroundService() for
+    // every action (start/update/stop).
+    val notification = if (intent != null && intent.action != ACTION_STOP) {
+      buildNotification(intent)
+    } else {
+      buildFallbackNotification()
+    }
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+      startForeground(
+        NOTIFICATION_ID,
+        notification,
+        ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
+      )
+    } else {
+      startForeground(NOTIFICATION_ID, notification)
+    }
+
     when (intent?.action) {
       ACTION_START -> {
-        val notification = buildNotification(intent)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-          startForeground(
-            NOTIFICATION_ID,
-            notification,
-            ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
-          )
-        } else {
-          startForeground(NOTIFICATION_ID, notification)
-        }
         acquireWakeLock()
       }
       ACTION_UPDATE -> {
-        val notification = buildNotification(intent)
-        NotificationManagerCompat.from(this).notify(NOTIFICATION_ID, notification)
+        // startForeground above already updates the existing notification when the
+        // service is already foreground, so no extra notify() call is needed.
         acquireWakeLock()
       }
       ACTION_STOP -> {
@@ -137,8 +161,26 @@ class MeditationForegroundService : Service() {
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
       }
+      else -> {
+        // Unknown / null action — tear down cleanly so we don't sit as a zombie.
+        stopForeground(STOP_FOREGROUND_REMOVE)
+        stopSelf()
+      }
     }
     return START_NOT_STICKY
+  }
+
+  /** Minimal notification used to satisfy the foreground contract before we have
+   *  meaningful state (e.g. when ACTION_STOP arrives without a prior ACTION_START).
+   */
+  private fun buildFallbackNotification(): Notification {
+    return NotificationCompat.Builder(this, CHANNEL_ID)
+      .setSmallIcon(android.R.drawable.ic_media_play)
+      .setContentTitle("Meditation")
+      .setOngoing(true)
+      .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+      .setOnlyAlertOnce(true)
+      .build()
   }
 
   override fun onDestroy() {
@@ -165,6 +207,11 @@ class MeditationForegroundService : Service() {
           intervalTrackers.add(tracker)
           scheduleTracker(tracker)
         }
+        "ONE_SHOT" -> {
+          val oneShot = OneShot(e.soundId, now + e.offsetMs.coerceAtLeast(0L))
+          oneShots.add(oneShot)
+          scheduleOneShot(oneShot)
+        }
       }
     }
   }
@@ -172,6 +219,7 @@ class MeditationForegroundService : Service() {
   fun clearScheduleInternal() {
     soundHandler.removeCallbacksAndMessages(null)
     intervalTrackers.clear()
+    oneShots.clear()
     schedulePaused = false
     stopAmbient()
   }
@@ -182,6 +230,9 @@ class MeditationForegroundService : Service() {
     val now = SystemClock.uptimeMillis()
     for (t in intervalTrackers) {
       t.pausedRemainingMs = (t.nextFireUptimeMs - now).coerceAtLeast(0)
+    }
+    for (os in oneShots) {
+      os.pausedRemainingMs = (os.fireAtUptimeMs - now).coerceAtLeast(0)
     }
     soundHandler.removeCallbacksAndMessages(null)
     try { ambientPlayer?.pause() } catch (_: Exception) {}
@@ -196,6 +247,12 @@ class MeditationForegroundService : Service() {
       t.nextFireUptimeMs = now + remaining
       t.pausedRemainingMs = null
       scheduleTracker(t)
+    }
+    for (os in oneShots) {
+      val remaining = os.pausedRemainingMs ?: continue
+      os.fireAtUptimeMs = now + remaining
+      os.pausedRemainingMs = null
+      scheduleOneShot(os)
     }
     try { ambientPlayer?.start() } catch (_: Exception) {}
   }
@@ -213,6 +270,21 @@ class MeditationForegroundService : Service() {
       // Tracker may have been removed via clearSchedule; ignore stale callbacks.
       if (intervalTrackers.contains(tracker) && !schedulePaused) {
         fireTracker(tracker)
+      }
+    }, delay)
+  }
+
+  private fun scheduleOneShot(os: OneShot) {
+    val delay = (os.fireAtUptimeMs - SystemClock.uptimeMillis()).coerceAtLeast(0)
+    soundHandler.postDelayed({
+      // Skip if cleared or paused while waiting.
+      if (oneShots.contains(os) && !schedulePaused) {
+        // Foreground: JS plays this marker itself (with finish-aware timing).
+        // Only play natively when the app is backgrounded, so we don't double it.
+        if (!appForeground) {
+          playOneShotSound(os.soundId)
+        }
+        oneShots.remove(os)
       }
     }, delay)
   }

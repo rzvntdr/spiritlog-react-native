@@ -103,56 +103,87 @@ export async function getLongestSession(): Promise<number> {
   return result?.max ?? 0;
 }
 
-export async function getBestStreak(): Promise<number> {
+/**
+ * Q2 streak model with freeze auto-consumption.
+ *
+ * Rules:
+ *  - Each session day increments streak by 1.
+ *  - Every `freezeEarnRate` session days of streak → +1 freeze (no cap).
+ *  - Missed days between sessions consume 1 freeze each. Streak does NOT
+ *    increment for a freeze-covered day. Only the new session day itself
+ *    bumps streak (by 1), in addition to consuming freezes for the gap.
+ *  - If freezes are insufficient for the gap, the streak breaks and restarts
+ *    at the new session day.
+ *  - Days between the last session and today are also covered by freezes;
+ *    if insufficient, streak is broken at the next view.
+ */
+export interface StreakState {
+  streak: number;
+  best: number;
+  freezesAvailable: number;
+  alive: boolean;
+  lastSessionDayMs: number | null;
+}
+
+const DAY_MS = 86400000;
+
+export async function getStreakState(freezeEarnRate: number): Promise<StreakState> {
   const db = await getDatabase();
   const rows = await db.getAllAsync<{ day_start: number }>(
     `SELECT DISTINCT date / 86400000 * 86400000 as day_start
      FROM sessions ORDER BY day_start ASC`
   );
-  if (rows.length === 0) return 0;
-  const oneDayMs = 86400000;
-  let best = 1;
-  let run = 1;
-  for (let i = 1; i < rows.length; i++) {
-    if (rows[i].day_start - rows[i - 1].day_start === oneDayMs) {
-      run++;
-      if (run > best) best = run;
-    } else {
-      run = 1;
-    }
+  if (rows.length === 0) {
+    return { streak: 0, best: 0, freezesAvailable: 0, alive: false, lastSessionDayMs: null };
   }
-  return best;
-}
 
-export async function getCurrentStreak(): Promise<number> {
-  const db = await getDatabase();
-  // Get all unique session dates (as day timestamps) for the last 365 days
-  const yearAgo = Date.now() - 365 * 24 * 60 * 60 * 1000;
-  const rows = await db.getAllAsync<{ day_start: number }>(
-    `SELECT DISTINCT date / 86400000 * 86400000 as day_start
-     FROM sessions WHERE date >= ?
-     ORDER BY day_start DESC`,
-    [yearAgo]
-  );
-
-  if (rows.length === 0) return 0;
-
-  const todayStart = getTodayStartTimestamp();
-  const yesterdayStart = todayStart - 86400000;
-  const oneDayMs = 86400000;
-
-  // Streak must start from today or yesterday
-  const firstDay = rows[0].day_start;
-  if (firstDay < yesterdayStart) return 0;
+  const rate = Math.max(1, Math.floor(freezeEarnRate));
+  const today = getTodayStartTimestamp();
+  const days = rows.map((r) => r.day_start);
 
   let streak = 1;
-  for (let i = 1; i < rows.length; i++) {
-    const expected = rows[i - 1].day_start - oneDayMs;
-    if (rows[i].day_start === expected) {
-      streak++;
+  let earned = Math.floor(streak / rate);
+  let used = 0;
+  let best = 1;
+
+  const refreshEarned = () => { earned = Math.floor(streak / rate); };
+
+  for (let i = 1; i < days.length; i++) {
+    const gap = Math.round((days[i] - days[i - 1]) / DAY_MS) - 1;
+    if (gap === 0) {
+      streak += 1;
+    } else if (gap <= earned - used) {
+      used += gap;
+      streak += 1;
     } else {
-      break;
+      streak = 1;
+      used = 0;
+    }
+    refreshEarned();
+    if (streak > best) best = streak;
+  }
+
+  // Gap from last session to today
+  const lastSessionDay = days[days.length - 1];
+  const daysSinceLast = Math.round((today - lastSessionDay) / DAY_MS);
+
+  let alive = true;
+  if (daysSinceLast > 1) {
+    const missed = daysSinceLast - 1;
+    if (missed <= earned - used) {
+      used += missed;
+    } else {
+      streak = 0;
+      alive = false;
     }
   }
-  return streak;
+
+  return {
+    streak,
+    best,
+    freezesAvailable: alive ? earned - used : 0,
+    alive,
+    lastSessionDayMs: lastSessionDay,
+  };
 }
+
