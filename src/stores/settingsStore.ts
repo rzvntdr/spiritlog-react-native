@@ -4,6 +4,49 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 export const DEFAULT_REMINDER_TITLE = 'Time to Meditate';
 export const DEFAULT_REMINDER_BODY = 'Take a moment to breathe and find your calm.';
 
+/**
+ * Visual tuning for the 'plant' streak art. Set once (dev builds expose
+ * sliders; release builds keep whatever shipped/was first generated —
+ * there is intentionally NO release UI to change these afterwards).
+ */
+export interface PlantTuning {
+  /** 0..1 foliage density. */
+  density: number;
+  /** Multiplier on leaf size. */
+  leafScale: number;
+  /** Multiplier on branch thickness. */
+  thickness: number;
+  /** 0..1 how many branches the skeleton grows. */
+  branchiness: number;
+  /** 0..1 crown width. */
+  crownSpread: number;
+}
+
+export const DEFAULT_PLANT_TUNING: PlantTuning = {
+  density: 0.5,
+  leafScale: 1,
+  thickness: 1,
+  branchiness: 0.5,
+  crownSpread: 0.5,
+};
+
+export type PlantAlgorithmSetting = 'colony' | 'lsystem';
+export type PlantFormSetting = 'auto' | 'tall' | 'broad';
+
+/**
+ * TRANSIENT plant draft used by the debug tuning panel: the sliders edit this,
+ * the hero/preview renders it while it exists, and it is NEVER persisted.
+ * The explicit "save/override" button commits it into the persisted fields
+ * (plantSeed/plantAlgorithm/plantForm/plantTuning); dismissing the panel
+ * discards it and the plant falls back to the saved config.
+ */
+export interface PlantDraft {
+  seed: number;
+  algorithm: PlantAlgorithmSetting;
+  form: PlantFormSetting;
+  tuning: PlantTuning;
+}
+
 export interface ReminderConfig {
   enabled: boolean;
   hour: number;
@@ -32,8 +75,16 @@ interface SettingsState {
   streakArtStyle: 'classic' | 'plant';
   /** Q2: number of consecutive streak days required to earn 1 freeze. Default 10. */
   freezeEarnRate: number;
-  /** Which Lottie celebration theme plays on streak/freeze increments. */
-  celebrationAssetId: string;
+  /** Seed of the user's plant (null until first assigned — then stable). */
+  plantSeed: number | null;
+  /** Skeleton algorithm for the plant art. */
+  plantAlgorithm: PlantAlgorithmSetting;
+  /** L-system silhouette ('auto' = let the seed decide). */
+  plantForm: PlantFormSetting;
+  /** Design knobs for the plant art. */
+  plantTuning: PlantTuning;
+  /** Transient debugger draft (not persisted) — see PlantDraft. */
+  plantDraft: PlantDraft | null;
   isLoaded: boolean;
 
   // Actions
@@ -50,7 +101,15 @@ interface SettingsState {
   setStreakHeroText: (value: string | null) => void;
   setStreakArtStyle: (value: 'classic' | 'plant') => void;
   setFreezeEarnRate: (value: number) => void;
-  setCelebrationAssetId: (value: string) => void;
+  setPlantSeed: (value: number) => void;
+  setPlantAlgorithm: (value: PlantAlgorithmSetting) => void;
+  setPlantForm: (value: PlantFormSetting) => void;
+  setPlantTuning: (value: Partial<PlantTuning>) => void;
+  /** Patch the transient draft (created from the saved config on first touch). */
+  setPlantDraft: (patch: Partial<Omit<PlantDraft, 'tuning'>> & { tuning?: Partial<PlantTuning> }) => void;
+  clearPlantDraft: () => void;
+  /** Commit the draft into the persisted plant config ("override"). */
+  commitPlantDraft: () => void;
   loadSettings: () => Promise<void>;
 }
 
@@ -70,7 +129,11 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   streakHeroText: null,
   streakArtStyle: 'classic',
   freezeEarnRate: 10,
-  celebrationAssetId: 'burst',
+  plantSeed: null,
+  plantAlgorithm: 'lsystem',
+  plantForm: 'auto',
+  plantTuning: DEFAULT_PLANT_TUNING,
+  plantDraft: null,
   isLoaded: false,
 
   setThemeId: (id) => {
@@ -140,8 +203,56 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     persistSettings(get());
   },
 
-  setCelebrationAssetId: (value) => {
-    set({ celebrationAssetId: value });
+  setPlantSeed: (value) => {
+    set({ plantSeed: value >>> 0 });
+    persistSettings(get());
+  },
+
+  setPlantAlgorithm: (value) => {
+    set({ plantAlgorithm: value });
+    persistSettings(get());
+  },
+
+  setPlantForm: (value) => {
+    set({ plantForm: value });
+    persistSettings(get());
+  },
+
+  setPlantTuning: (value) => {
+    set({ plantTuning: { ...get().plantTuning, ...value } });
+    persistSettings(get());
+  },
+
+  setPlantDraft: (patch) => {
+    const st = get();
+    const base: PlantDraft = st.plantDraft ?? {
+      seed: st.plantSeed ?? 1337,
+      algorithm: st.plantAlgorithm,
+      form: st.plantForm,
+      tuning: st.plantTuning,
+    };
+    set({
+      plantDraft: {
+        ...base,
+        ...patch,
+        tuning: { ...base.tuning, ...(patch.tuning ?? {}) },
+      },
+    });
+    // intentionally NOT persisted — drafts die with the session/panel
+  },
+
+  clearPlantDraft: () => set({ plantDraft: null }),
+
+  commitPlantDraft: () => {
+    const draft = get().plantDraft;
+    if (!draft) return;
+    set({
+      plantSeed: draft.seed >>> 0,
+      plantAlgorithm: draft.algorithm,
+      plantForm: draft.form,
+      plantTuning: draft.tuning,
+      plantDraft: null,
+    });
     persistSettings(get());
   },
 
@@ -164,7 +275,10 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
           streakHeroText: parsed.streakHeroText ?? null,
           streakArtStyle: parsed.streakArtStyle ?? 'classic',
           freezeEarnRate: typeof parsed.freezeEarnRate === 'number' ? parsed.freezeEarnRate : 10,
-          celebrationAssetId: parsed.celebrationAssetId ?? 'burst',
+          plantSeed: typeof parsed.plantSeed === 'number' ? parsed.plantSeed : null,
+          plantAlgorithm: parsed.plantAlgorithm === 'colony' ? 'colony' : 'lsystem',
+          plantForm: ['tall', 'broad'].includes(parsed.plantForm) ? parsed.plantForm : 'auto',
+          plantTuning: { ...DEFAULT_PLANT_TUNING, ...(parsed.plantTuning ?? {}) },
           isLoaded: true,
         });
       } else {
@@ -191,7 +305,10 @@ function persistSettings(state: SettingsState) {
     streakHeroText: state.streakHeroText,
     streakArtStyle: state.streakArtStyle,
     freezeEarnRate: state.freezeEarnRate,
-    celebrationAssetId: state.celebrationAssetId,
+    plantSeed: state.plantSeed,
+    plantAlgorithm: state.plantAlgorithm,
+    plantForm: state.plantForm,
+    plantTuning: state.plantTuning,
   };
   AsyncStorage.setItem(SETTINGS_KEY, JSON.stringify(data));
 }

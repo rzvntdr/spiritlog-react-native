@@ -136,14 +136,10 @@ export default function StreakHero({
     >
       <ArtComponent tier={tier} days={currentStreak} c={c} />
 
-      {/* Content — for plant style, keep the column centered but nudged slightly
-          right of center (mirror of the old left-of-center position), leaving the
-          widened plant its room on the left. */}
+      {/* Content — for plant style the TEXT column owns the LEFT side and the
+          right side is the visual slot (plant now; future scene elements). */}
       <View
-        style={[
-          styles.content,
-          isPlant && { transform: [{ translateX: 24 }] },
-        ]}
+        style={[styles.content, isPlant && styles.contentLeft]}
         pointerEvents="none"
       >
         {!isPlant && <Text style={styles.flame}>🔥</Text>}
@@ -185,6 +181,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     gap: 2,
+  },
+  contentLeft: {
+    alignItems: 'flex-start',
+    paddingLeft: spacing.lg,
   },
   flame: {
     fontSize: 34,

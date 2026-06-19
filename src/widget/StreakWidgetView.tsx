@@ -1,7 +1,7 @@
 import React from 'react';
 import { FlexWidget, TextWidget, SvgWidget } from 'react-native-android-widget';
 import { streakTierFor } from '../utils/streakTier';
-import { plantSvgString } from './plantSvg';
+import { plantWidgetSvg } from './plantSvg';
 import type { WidgetPayload } from './widgetData';
 
 // calmTheme colors (widgets can't read the RN theme context).
@@ -24,7 +24,6 @@ function numberColor(streak: number): `#${string}` {
  *  the task handler and from requestWidgetUpdate. */
 export function StreakWidget(payload: WidgetPayload) {
   const { streak, freezes, subtitle } = payload;
-  const tier = streakTierFor(streak);
 
   return (
     <FlexWidget
@@ -42,7 +41,7 @@ export function StreakWidget(payload: WidgetPayload) {
       }}
     >
       <SvgWidget
-        svg={plantSvgString(tier)}
+        svg={plantWidgetSvg(payload)}
         style={{ width: 88, height: 104 }}
       />
 

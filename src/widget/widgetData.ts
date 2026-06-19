@@ -2,7 +2,13 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { requestWidgetUpdate } from 'react-native-android-widget';
 import { Platform } from 'react-native';
 import { useSessionStore } from '../stores/sessionStore';
-import { useSettingsStore } from '../stores/settingsStore';
+import {
+  DEFAULT_PLANT_TUNING,
+  PlantAlgorithmSetting,
+  PlantFormSetting,
+  PlantTuning,
+  useSettingsStore,
+} from '../stores/settingsStore';
 import { renderStreakText } from '../utils/streakText';
 import { createLogger } from '../utils/logger';
 import { StreakWidget } from './StreakWidgetView';
@@ -16,9 +22,22 @@ export interface WidgetPayload {
   streak: number;
   freezes: number;
   subtitle: string;
+  /** Plant identity + tuning so the headless widget renders YOUR plant. */
+  plantSeed: number;
+  plantAlgorithm: PlantAlgorithmSetting;
+  plantForm: PlantFormSetting;
+  plantTuning: PlantTuning;
 }
 
-const DEFAULT_PAYLOAD: WidgetPayload = { streak: 0, freezes: 0, subtitle: 'DAYS IN A ROW' };
+const DEFAULT_PAYLOAD: WidgetPayload = {
+  streak: 0,
+  freezes: 0,
+  subtitle: 'DAYS IN A ROW',
+  plantSeed: 1337,
+  plantAlgorithm: 'lsystem',
+  plantForm: 'auto',
+  plantTuning: DEFAULT_PLANT_TUNING,
+};
 
 /** Build the widget payload from current app state. Honors demo overrides so
  *  develop mode pushes the demo number to the widget too. */
@@ -41,7 +60,15 @@ export function computeWidgetPayload(): WidgetPayload {
     freezesAvailable: freezes,
   });
 
-  return { streak, freezes, subtitle };
+  return {
+    streak,
+    freezes,
+    subtitle,
+    plantSeed: s.plantSeed ?? DEFAULT_PAYLOAD.plantSeed,
+    plantAlgorithm: s.plantAlgorithm,
+    plantForm: s.plantForm,
+    plantTuning: s.plantTuning,
+  };
 }
 
 export async function saveWidgetData(payload: WidgetPayload): Promise<void> {

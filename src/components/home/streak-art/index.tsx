@@ -1,7 +1,7 @@
 import React from 'react';
 import { StreakArtProps, StreakArtStyle, StreakArtMeta } from './types';
 import ClassicArt from './ClassicArt';
-import PlantArt from './PlantArt';
+import TreeArt from './TreeArt';
 
 /**
  * Registry of streak-art renderers. Adding a new style = add a row here.
@@ -17,7 +17,7 @@ const REGISTRY: Record<StreakArtStyle, { component: React.FC<StreakArtProps>; me
     },
   },
   plant: {
-    component: PlantArt,
+    component: TreeArt,
     meta: {
       id: 'plant',
       label: 'Plant',

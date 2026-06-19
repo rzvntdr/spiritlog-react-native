@@ -11,9 +11,6 @@ interface Props {
   /** Increment streak +1 AND freeze +1 together (the threshold-day case). */
   onBoth: () => void;
   onDismiss: () => void;
-  celebrationOptions: { id: string; label: string }[];
-  celebrationAssetId: string;
-  onCelebrationAssetChange: (id: string) => void;
 }
 
 const PRESETS = [0, 1, 7, 30, 100, 365, 800];
@@ -25,9 +22,6 @@ export default function DemoStreakBar({
   onFreezeChange,
   onBoth,
   onDismiss,
-  celebrationOptions,
-  celebrationAssetId,
-  onCelebrationAssetChange,
 }: Props) {
   const { theme } = useTheme();
   const c = theme.colors;
@@ -133,25 +127,6 @@ export default function DemoStreakBar({
       >
         <Text style={[typography.bodyEm, { color: c.onPrimary }]}>+1 day &amp; +1 freeze</Text>
       </Pressable>
-
-      {/* Celebration theme picker */}
-      <Text style={[typography.meta, { color: c.textMute, marginTop: spacing.xs }]}>Celebration</Text>
-      <View style={styles.presetRow}>
-        {celebrationOptions.map((opt) => {
-          const active = celebrationAssetId === opt.id;
-          return (
-            <Pressable
-              key={opt.id}
-              onPress={() => onCelebrationAssetChange(opt.id)}
-              style={[styles.preset, { backgroundColor: active ? c.primaryContainer : c.surface, borderColor: active ? c.accent : c.line }]}
-            >
-              <Text style={[typography.meta, { color: active ? c.onPrimary : c.textDim, fontWeight: '600' }]}>
-                {opt.label}
-              </Text>
-            </Pressable>
-          );
-        })}
-      </View>
     </View>
   );
 }

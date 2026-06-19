@@ -4,19 +4,22 @@ All notable changes to SpiritLog are documented here. Format: [Keep a Changelog]
 
 ## [Unreleased]
 
+## [0.4.0] — 2026-06-12
+
 ### Added
 
 - **Streak freezes (Q2)**: missed days are auto-covered by earned freezes instead of breaking the streak. You earn 1 freeze per N consecutive days (configurable in Settings → STREAK, default 10). Consolidated streak math in `getStreakState()`; the 🛡 line on the hero now reflects real freezes available.
 - **Streak increment animation**: returning to Home after a session that grew the streak plays a count-up (duration scaled to the jump) with a spring "pop" on the number. 0 → first streak crossfades from the WelcomeCard to the StreakHero. State is snapshotted (`lastShownStreakState`, persisted) so it animates the delta once, not on every visit.
-- **Celebration bursts (Lottie)**: streak/freeze increments play a one-shot Lottie over the hero. Bundled themes (Gold burst, Arrow Up, Level Up) selectable; freeze earns play a small frost burst anchored on the 🛡 line. The combined threshold day (+1 streak earns a freeze) plays the streak burst then the freeze burst.
+- **Freeze shield blessing**: earning a freeze plays a one-shot golden "holy" burst anchored on the 🛡 shield line (paladin-shield feel). This is the only celebration effect — the broader streak-increment Lottie system (number bursts + theme picker) was built and then removed during this cycle.
 - **Streak art styles**: pick `Classic` (glow + sparkles) or `Plant` (an SVG plant that grows through all 10 tiers) for the hero card.
 - **Custom streak subtitle**: Settings → STREAK lets you template the line under the number with `{streak} {best} {hours} {sessions} {freezes}`.
 - **Persistent logs**: the in-app logger now writes to a rotating file (`documentDirectory/logs`, 256 KB rotation) so logs survive crashes and app restarts. Settings → DEBUG → "Share recent logs" exports them.
-- **Demo mode controls** (Settings → DEBUG + on-Home bar): override streak and freezes independently, a "+1 day & +1 freeze" button for the threshold case, and a celebration-theme picker — all to preview hero visuals without real data.
+- **Demo mode controls** (Settings → DEBUG + on-Home bar): override streak and freezes independently and a "+1 day & +1 freeze" button for the threshold case — all to preview hero visuals without real data.
 
 ### Changed
 
-- **Plant art**: denser, more detailed foliage with monotonic growth (no tier ever looks emptier than the one before); widened canvas and the streak number nudged right-of-center for balance.
+- **Plant art rebuilt on the procedural plant engine**: the `Plant` hero style now uses the space-colonization / L-system engine (seeded sprout → sapling → mature tree lifecycle, branch-staggered growth, aging colors, exposed roots). The plant's seed is rolled once on first activation and persisted — its identity is fixed from then on. While DEMO/debug mode is active, an on-Home tuning panel appears (sliders for density/leaf size/thickness/branchiness/crown, algorithm + silhouette pickers, reroll-seed button). The panel edits a TRANSIENT draft previewed live by the hero; the explicit "💾 Salvează (override)" button commits it over the saved config, and dismissing demo mode discards unsaved experiments. Outside demo mode there is intentionally no way to change seed or tuning. Hero layout: text column anchored left, the right side is the art slot. The home-screen widget renders THE SAME plant (engine + your seed/tuning, maturity from the streak) instead of the old tier-based mini drawing.
+- **Plant art (legacy)**: denser, more detailed foliage with monotonic growth (no tier ever looks emptier than the one before); widened canvas and the streak number nudged right-of-center for balance. (Superseded by the engine above.)
 
 ### Fixed
 

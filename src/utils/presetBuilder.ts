@@ -1,6 +1,6 @@
 import { PresetTimer, PresetElement, SoundConfig } from '../types/preset';
 import { MeditationElement } from '../types/timer';
-import { AttachedSound } from '../components/preset/PhaseChip';
+import type { AttachedSound } from '../components/preset/PhaseChip';
 
 export function soundConfigToLabel(sc: SoundConfig): AttachedSound {
   let paramsLabel = '';

@@ -15,7 +15,8 @@ import WelcomeToStreakTransition from '../components/home/WelcomeToStreakTransit
 import WelcomeCard from '../components/home/WelcomeCard';
 import HomeStats from '../components/home/HomeStats';
 import DemoStreakBar from '../components/home/DemoStreakBar';
-import StreakCelebration, { CelebrationKind, CELEBRATION_ASSETS } from '../components/home/StreakCelebration';
+import PlantTuningPanel from '../components/home/PlantTuningPanel';
+import FreezeShieldBurst from '../components/home/StreakCelebration';
 import { pushWidgetUpdate } from '../widget/widgetData';
 import { spacing } from '../theme/scale';
 
@@ -43,8 +44,6 @@ export default function HomeScreen({ navigation }: Props) {
   const streakHeroText = useSettingsStore((s) => s.streakHeroText);
   const streakArtStyle = useSettingsStore((s) => s.streakArtStyle);
   const freezeEarnRate = useSettingsStore((s) => s.freezeEarnRate);
-  const celebrationAssetId = useSettingsStore((s) => s.celebrationAssetId);
-  const setCelebrationAssetId = useSettingsStore((s) => s.setCelebrationAssetId);
 
   // Tracks the demo value shown on the previous render so we can animate
   // from old → new when the user bumps it with +/- in debug mode.
@@ -62,31 +61,17 @@ export default function HomeScreen({ navigation }: Props) {
     ? (demoFreezeOverride ?? derivedDemoFreezes)
     : (stats.freezesAvailable ?? 0);
 
-  // ---- Celebration overlay (Lottie burst on streak/freeze increase) ----
-  const [celebration, setCelebration] = useState<{ kind: CelebrationKind; key: number } | null>(null);
+  // ---- Freeze shield "holy" burst (the only celebration effect kept) ----
+  const [shieldBurstKey, setShieldBurstKey] = useState<number | null>(null);
   const celebKeyRef = useRef(0);
-  // Latest measured rect of the streak number (relative to the hero card),
-  // so celebration bursts anchor on/around the number rather than the card middle.
+  // Latest measured rect of the streak number (relative to the hero card) —
+  // the 🛡 shield line the burst anchors on sits just below it.
   const numberRectRef = useRef<{ cx: number; cy: number; w: number; h: number } | null>(null);
   const celebDemoBaselineRef = useRef<{ s: number; f: number } | null>(null);
-  const freezeBurstTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const fireBurst = (kind: CelebrationKind) => {
+  const fireShieldBurst = () => {
     celebKeyRef.current += 1;
-    setCelebration({ kind, key: celebKeyRef.current });
-  };
-  // When both increase in one step (the threshold day: +1 streak earns a freeze),
-  // play the gold streak burst first, then the frost freeze burst a beat later.
-  const fireBursts = (streakUp: boolean, freezeUp: boolean) => {
-    if (freezeBurstTimerRef.current) clearTimeout(freezeBurstTimerRef.current);
-    if (streakUp) {
-      fireBurst('streak');
-      if (freezeUp) {
-        freezeBurstTimerRef.current = setTimeout(() => fireBurst('freeze'), 650);
-      }
-    } else if (freezeUp) {
-      fireBurst('freeze');
-    }
+    setShieldBurstKey(celebKeyRef.current);
   };
 
   useEffect(() => {
@@ -94,26 +79,28 @@ export default function HomeScreen({ navigation }: Props) {
       const prev = celebDemoBaselineRef.current;
       celebDemoBaselineRef.current = { s: effectiveStreak, f: effectiveFreezes };
       if (!prev) return; // first demo render: establish baseline, don't fire
-      fireBursts(effectiveStreak > prev.s, effectiveFreezes > prev.f);
+      if (effectiveFreezes > prev.f) fireShieldBurst();
     } else {
       celebDemoBaselineRef.current = null;
-      // Real mode: celebrate only a genuine increase vs the last shown state
+      // Real mode: only a genuine increase vs the last shown state
       // (avoids firing on the initial 0 → realValue stats load at app open).
       const ls = lastShownStreakState;
       if (!ls) return;
-      fireBursts(effectiveStreak > ls.streak, effectiveFreezes > ls.freezesAvailable);
+      if (effectiveFreezes > ls.freezesAvailable) fireShieldBurst();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [effectiveStreak, effectiveFreezes, demoActive]);
 
-  useEffect(() => () => {
-    if (freezeBurstTimerRef.current) clearTimeout(freezeBurstTimerRef.current);
-  }, []);
-
-  // Keep the home-screen widget in sync with whatever the hero shows (incl. demo).
+  // Keep the home-screen widget in sync with whatever the hero shows (incl.
+  // demo) AND with the SAVED plant config — committing a plant override must
+  // refresh the widget's plant too. (Drafts intentionally don't push.)
+  const plantSeed = useSettingsStore((s) => s.plantSeed);
+  const plantAlgorithm = useSettingsStore((s) => s.plantAlgorithm);
+  const plantForm = useSettingsStore((s) => s.plantForm);
+  const plantTuning = useSettingsStore((s) => s.plantTuning);
   useEffect(() => {
     pushWidgetUpdate();
-  }, [effectiveStreak, effectiveFreezes]);
+  }, [effectiveStreak, effectiveFreezes, plantSeed, plantAlgorithm, plantForm, plantTuning]);
 
   useEffect(() => {
     loadPresets();
@@ -245,9 +232,6 @@ export default function HomeScreen({ navigation }: Props) {
                   setDemoStreakOverride(null);
                   setDemoFreezeOverride(null);
                 }}
-                celebrationOptions={CELEBRATION_ASSETS.map((a) => ({ id: a.id, label: a.label }))}
-                celebrationAssetId={celebrationAssetId}
-                onCelebrationAssetChange={setCelebrationAssetId}
               />
             )}
 
@@ -280,15 +264,15 @@ export default function HomeScreen({ navigation }: Props) {
               ) : (
                 <WelcomeCard />
               )}
-              {celebration && (
-                <StreakCelebration
-                  key={celebration.key}
-                  kind={celebration.kind}
-                  assetId={celebrationAssetId}
-                  numberRect={numberRectRef.current}
-                />
+              {shieldBurstKey != null && (
+                <FreezeShieldBurst key={shieldBurstKey} numberRect={numberRectRef.current} />
               )}
             </View>
+
+            {/* Plant playground — visible whenever DEMO/debug mode is on
+                (any build). Without demo mode the plant stays locked to its
+                first-rolled seed + tuning. */}
+            {demoActive && streakArtStyle === 'plant' && <PlantTuningPanel />}
 
             {hasHistory && (
               <HomeStats totalMinutes={stats.totalMinutes} avgMinutes={stats.avgDuration} />

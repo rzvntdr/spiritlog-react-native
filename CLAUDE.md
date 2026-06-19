@@ -35,6 +35,11 @@ Phone: Settings → Developer options → Wireless debugging → **Pair device w
 
 After successful pair, only the connect port matters.
 
+**Tip**: if `adb connect IP:PORT` times out, check `adb devices -l` first — after
+pairing, adb often auto-discovers the phone via mDNS (serial like
+`adb-...-XXXX._adb-tls-connect._tcp`) and you can `adb -s "<that serial>"
+install -r <apk>` directly, no port needed.
+
 ## Principles (from 00-ux-principles.md)
 
 - No gamification, no guilt, no FOMO — the app should feel calm and supportive.
