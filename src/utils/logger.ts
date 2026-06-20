@@ -166,10 +166,16 @@ export function createLogger(tag: string): Logger {
   };
 }
 
+/** Cap on exported log size — keep the most RECENT slice so today's session
+ *  isn't buried under weeks of history (the on-disk file keeps everything). */
+const EXPORT_TAIL_BYTES = 96 * 1024;
+
 /**
- * Returns the full persisted log: previous-rotated file (oldest) + current file +
+ * Returns the persisted log: previous-rotated file (oldest) + current file +
  * in-memory ring entries that haven't been flushed yet. Flushes pending writes
- * before reading.
+ * before reading. Truncated to the most recent {@link EXPORT_TAIL_BYTES} so the
+ * newest events (the ones you usually care about) are at the bottom and not
+ * lost in the middle of a large file.
  */
 export async function getRecentLogs(): Promise<string> {
   flushFileLog();
@@ -191,10 +197,20 @@ export async function getRecentLogs(): Promise<string> {
     content = ring.map(formatLine).join('\n') + '\n';
   }
 
+  let truncatedNote = '';
+  if (content.length > EXPORT_TAIL_BYTES) {
+    let tail = content.slice(content.length - EXPORT_TAIL_BYTES);
+    // Drop the partial first line so the export starts on a clean entry.
+    const nl = tail.indexOf('\n');
+    if (nl >= 0) tail = tail.slice(nl + 1);
+    truncatedNote = ` · tail ${Math.round(EXPORT_TAIL_BYTES / 1024)}KB of ${Math.round(content.length / 1024)}KB`;
+    content = tail;
+  }
+
   const sizeNote = currentFile?.exists
     ? `${(currentFile as unknown as { size: number }).size}B current`
     : 'no current file';
-  const header = `--- SpiritLog logs · exported ${new Date().toISOString()} · ${sizeNote} ---\n`;
+  const header = `--- SpiritLog logs · exported ${new Date().toISOString()} · ${sizeNote}${truncatedNote} ---\n`;
   return header + content;
 }
 

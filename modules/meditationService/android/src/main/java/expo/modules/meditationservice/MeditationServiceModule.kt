@@ -87,10 +87,17 @@ class MeditationServiceModule : Module() {
           offsetMs = it.offsetMs.toLong()
         )
       }
-      MeditationForegroundService.instance?.setScheduleInternal(mapped)
+      val svc = MeditationForegroundService.instance
+      if (svc != null) {
+        svc.setScheduleInternal(mapped)
+      } else {
+        // Service not alive yet (start() is async). Stash so onStartCommand applies it.
+        MeditationForegroundService.pendingSchedule = mapped
+      }
     }
 
     Function("clearSoundSchedule") {
+      MeditationForegroundService.pendingSchedule = null
       MeditationForegroundService.instance?.clearScheduleInternal()
     }
 

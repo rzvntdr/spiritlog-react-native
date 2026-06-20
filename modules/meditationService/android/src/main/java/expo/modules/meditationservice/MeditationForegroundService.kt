@@ -16,6 +16,7 @@ import android.os.IBinder
 import android.os.Looper
 import android.os.PowerManager
 import android.os.SystemClock
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import kotlin.random.Random
@@ -34,6 +35,7 @@ class MeditationForegroundService : Service() {
     const val NOTIFICATION_ID = 4242
     const val CHANNEL_ID = "meditation_session"
     const val CHANNEL_NAME = "Meditation Session"
+    const val SOUND_TAG = "MedSound"
 
     const val ACTION_START = "expo.modules.meditationservice.START"
     const val ACTION_UPDATE = "expo.modules.meditationservice.UPDATE"
@@ -51,6 +53,15 @@ class MeditationForegroundService : Service() {
 
     @Volatile
     var instance: MeditationForegroundService? = null
+
+    /**
+     * Schedule pushed from JS before the service instance exists. `start()` uses
+     * startForegroundService() (async), so a setSoundSchedule() called synchronously
+     * right after start() arrives while instance is still null and would be lost.
+     * We stash it here and drain it in onStartCommand once the service is alive.
+     */
+    @Volatile
+    var pendingSchedule: List<ScheduleEntry>? = null
 
     fun emitAction(action: String) {
       moduleListener?.invoke(action)
@@ -102,6 +113,11 @@ class MeditationForegroundService : Service() {
   private var ambientPlayer: MediaPlayer? = null
   private var ambientVolume: Float = 0.5f
   private var schedulePaused: Boolean = false
+  // Strong references to in-flight one-shot players. Without this, a local
+  // MediaPlayer is eligible for GC the moment playOneShotSound() returns; on some
+  // devices it gets finalized mid-playback ("MediaPlayer finalized without being
+  // released") and the sound is cut off. Held here until completion/error.
+  private val activeOneShotPlayers = mutableListOf<MediaPlayer>()
   // ONE_SHOT markers are a BACKGROUND fallback. In the foreground the JS layer
   // plays markers via soundEngine (with proper "wait for sound to finish" timing),
   // so a foreground ONE_SHOT would double the bell. JS toggles this flag on
@@ -149,11 +165,15 @@ class MeditationForegroundService : Service() {
     when (intent?.action) {
       ACTION_START -> {
         acquireWakeLock()
+        drainPendingSchedule()
       }
       ACTION_UPDATE -> {
         // startForeground above already updates the existing notification when the
         // service is already foreground, so no extra notify() call is needed.
         acquireWakeLock()
+        // Safety net in case an UPDATE reaches us before the START that carried the
+        // schedule was fully processed.
+        drainPendingSchedule()
       }
       ACTION_STOP -> {
         clearScheduleInternal()
@@ -186,12 +206,24 @@ class MeditationForegroundService : Service() {
   override fun onDestroy() {
     super.onDestroy()
     clearScheduleInternal()
+    // Release any still-playing one-shots so they don't leak/finalize abnormally.
+    for (p in activeOneShotPlayers) {
+      try { p.release() } catch (_: Exception) {}
+    }
+    activeOneShotPlayers.clear()
     releaseWakeLock()
     NotificationManagerCompat.from(this).cancel(NOTIFICATION_ID)
     instance = null
   }
 
   // ---- Sound scheduling API (called from MeditationServiceModule) ----
+
+  /** Apply a schedule that arrived before the service instance existed. */
+  private fun drainPendingSchedule() {
+    val pending = pendingSchedule ?: return
+    pendingSchedule = null
+    setScheduleInternal(pending)
+  }
 
   fun setScheduleInternal(entries: List<ScheduleEntry>) {
     clearScheduleInternal()
@@ -290,6 +322,7 @@ class MeditationForegroundService : Service() {
   }
 
   private fun fireTracker(tracker: IntervalTracker) {
+    Log.d(SOUND_TAG, "fireTracker soundId=${tracker.schedule.soundId} type=${tracker.schedule.type}")
     playOneShotSound(tracker.schedule.soundId)
     val nextDelay = computeNextDelay(tracker.schedule)
     tracker.nextFireUptimeMs = SystemClock.uptimeMillis() + nextDelay
@@ -315,24 +348,32 @@ class MeditationForegroundService : Service() {
 
   private fun playOneShotSound(soundId: Int) {
     val resId = resolveSoundRes(soundId)
-    if (resId == 0) return
+    if (resId == 0) {
+      Log.w(SOUND_TAG, "playOneShotSound soundId=$soundId -> no resource")
+      return
+    }
     try {
-      val player = MediaPlayer.create(this, resId) ?: return
-      player.setAudioAttributes(
-        AudioAttributes.Builder()
-          .setUsage(AudioAttributes.USAGE_MEDIA)
-          .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-          .build()
-      )
+      val player = MediaPlayer.create(this, resId)
+      if (player == null) {
+        Log.w(SOUND_TAG, "playOneShotSound soundId=$soundId -> MediaPlayer.create returned null")
+        return
+      }
       player.setOnCompletionListener {
+        Log.d(SOUND_TAG, "onCompletion soundId=$soundId pos=${it.currentPosition} dur=${it.duration}")
+        activeOneShotPlayers.remove(it)
         try { it.release() } catch (_: Exception) {}
       }
-      player.setOnErrorListener { mp, _, _ ->
+      player.setOnErrorListener { mp, what, extra ->
+        Log.w(SOUND_TAG, "onError soundId=$soundId what=$what extra=$extra")
+        activeOneShotPlayers.remove(mp)
         try { mp.release() } catch (_: Exception) {}
         true
       }
+      Log.d(SOUND_TAG, "play soundId=$soundId dur=${player.duration} activePlayers=${activeOneShotPlayers.size}")
+      activeOneShotPlayers.add(player)
       player.start()
-    } catch (_: Exception) {
+    } catch (e: Exception) {
+      Log.w(SOUND_TAG, "playOneShotSound soundId=$soundId threw: ${e.message}")
       // Silently fail — don't crash the timer for a sound error
     }
   }

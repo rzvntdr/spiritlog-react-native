@@ -4,6 +4,15 @@ All notable changes to SpiritLog are documented here. Format: [Keep a Changelog]
 
 ## [Unreleased]
 
+### Fixed
+
+- **Interval sounds silent on single-phase presets**: a preset whose first (or only) phase is a duration with a fixed/random-interval sound played nothing. The native sound schedule was pushed synchronously right after starting the foreground service, before the service instance existed, so it was silently dropped. The schedule is now buffered and applied once the service comes up.
+- **Interval/marker sounds cut off mid-playback**: native one-shot players were held only in a local variable, so on some devices the GC finalized them while still playing (`MediaPlayer finalized without being released`) and the sound was clipped. Active players are now retained until they finish (or the session ends).
+
+### Changed
+
+- **Log export shows the most recent slice**: "Share recent logs" now exports the tail (~96 KB) of the on-disk log instead of dumping oldest-first, so the latest session isn't buried under weeks of history (the full log is still kept on disk).
+
 ## [0.4.0] — 2026-06-12
 
 ### Added
