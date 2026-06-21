@@ -106,13 +106,21 @@ export async function getLongestSession(): Promise<number> {
   return result?.max ?? 0;
 }
 
-/** Q2 streak model. Fetches distinct session days; math is in `computeStreak`. */
-export async function getStreakState(freezeEarnRate: number): Promise<StreakState> {
+/** Distinct UTC day-start timestamps that had at least one session, ascending. */
+export async function getStreakDayStarts(): Promise<number[]> {
   const db = await getDatabase();
   const rows = await db.getAllAsync<{ day_start: number }>(
     `SELECT DISTINCT date / 86400000 * 86400000 as day_start
      FROM sessions ORDER BY day_start ASC`
   );
-  return computeStreak(rows.map((r) => r.day_start), freezeEarnRate, getTodayStartTimestamp());
+  return rows.map((r) => r.day_start);
+}
+
+/** Q2 streak model. Fetches distinct session days; math is in `computeStreak`.
+ *  Prefer the checkpoint-backed `streakCheckpoint` service for live reads — this
+ *  remains as a direct, stateless full-history computation. */
+export async function getStreakState(freezeEarnRate: number): Promise<StreakState> {
+  const days = await getStreakDayStarts();
+  return computeStreak(days, freezeEarnRate, getTodayStartTimestamp());
 }
 

@@ -72,7 +72,7 @@ export default function IntervalSoundDialog({ visible, onClose, onSave, initialC
   ];
 
   return (
-    <Modal visible={visible} transparent animationType="fade">
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <View style={{ flex: 1, justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.5)', padding: 24 }}>
         <View style={{ backgroundColor: c.surface, borderRadius: 16, padding: 20 }}>
           <Text style={{ fontSize: 18, fontWeight: '700', color: c.onBackground, marginBottom: 16 }}>

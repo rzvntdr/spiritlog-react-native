@@ -14,6 +14,7 @@ import { getDayName } from '../services/reminderService';
 import { getRecentLogs, clearLogs } from '../utils/logger';
 import { renderStreakText, STREAK_TEXT_PRESETS } from '../utils/streakText';
 import { useSessionStore } from '../stores/sessionStore';
+import { pushWidgetUpdate } from '../widget/widgetData';
 import { listStreakArtStyles } from '../components/home/streak-art';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Settings'>;
@@ -41,6 +42,15 @@ export default function SettingsScreen({ navigation }: Props) {
   const freezeEarnRate = useSettingsStore((s) => s.freezeEarnRate);
   const setFreezeEarnRate = useSettingsStore((s) => s.setFreezeEarnRate);
   const stats = useSessionStore((s) => s.stats);
+
+  // Changing the earn rate persists the new setting, then refreshes stats — the
+  // streak service reconciles the checkpoint (sealing the old rate, applying the
+  // new one going forward) on the next read. Then push the widget.
+  const changeFreezeEarnRate = useCallback(async (next: number) => {
+    setFreezeEarnRate(next);
+    await useSessionStore.getState().loadStats();
+    await pushWidgetUpdate();
+  }, [setFreezeEarnRate]);
 
   const [dndAccessGranted, setDndAccessGranted] = useState(() =>
     Platform.OS === 'android' ? Dnd.isAccessGranted() : false
@@ -284,7 +294,7 @@ export default function SettingsScreen({ navigation }: Props) {
           </Text>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
             <Pressable
-              onPress={() => setFreezeEarnRate(freezeEarnRate - 1)}
+              onPress={() => changeFreezeEarnRate(freezeEarnRate - 1)}
               hitSlop={8}
               style={{
                 width: 38, height: 38, borderRadius: 8,
@@ -304,7 +314,7 @@ export default function SettingsScreen({ navigation }: Props) {
               </Text>
             </View>
             <Pressable
-              onPress={() => setFreezeEarnRate(freezeEarnRate + 1)}
+              onPress={() => changeFreezeEarnRate(freezeEarnRate + 1)}
               hitSlop={8}
               style={{
                 width: 38, height: 38, borderRadius: 8,

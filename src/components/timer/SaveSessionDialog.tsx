@@ -30,7 +30,7 @@ export default function SaveSessionDialog({ visible, elapsedMs, presetTotalMinut
   };
 
   return (
-    <Modal visible={visible} transparent animationType="fade">
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onDiscard}>
       <View style={{ flex: 1, justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.5)', padding: 32 }}>
         <View style={{ backgroundColor: c.surface, borderRadius: 16, padding: 24, alignItems: 'center' }}>
           <Text style={{ fontSize: 20, fontWeight: '700', color: c.onBackground, marginBottom: 8 }}>

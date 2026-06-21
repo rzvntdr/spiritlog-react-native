@@ -13,7 +13,7 @@ export default function ThemePicker({ visible, onClose }: Props) {
   const c = theme.colors;
 
   return (
-    <Modal visible={visible} transparent animationType="slide">
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <Pressable style={{ flex: 1 }} onPress={onClose} />
       <View
         style={{

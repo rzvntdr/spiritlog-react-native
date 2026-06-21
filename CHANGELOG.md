@@ -4,6 +4,10 @@ All notable changes to SpiritLog are documented here. Format: [Keep a Changelog]
 
 ## [Unreleased]
 
+### Changed
+
+- **Freeze earn rate no longer rewrites history**: streak + freezes are now held in a sealed, incrementally-advanced checkpoint instead of being recomputed from scratch every read. Changing the earn rate (Settings → STREAK) seals the current state and applies the new rate only going forward — your streak can't suddenly jump up or down from a settings toggle. Accumulated progress toward the next freeze is preserved and converted at the new rate (lowering the rate can grant a freeze immediately if enough progress was banked). Migrates existing history automatically on first run; rebuilds on session delete / backup restore.
+
 ### Fixed
 
 - **Interval sounds silent on single-phase presets**: a preset whose first (or only) phase is a duration with a fixed/random-interval sound played nothing. The native sound schedule was pushed synchronously right after starting the foreground service, before the service instance existed, so it was silently dropped. The schedule is now buffered and applied once the service comes up.

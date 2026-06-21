@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, Pressable, TextInput, Modal, ScrollView } from 'react-native';
-import Slider from '@react-native-community/slider';
 import { useTheme } from '../../theme/ThemeContext';
 import { DurationType, SoundConfig } from '../../types/preset';
 import { radius, spacing, typography } from '../../theme/scale';
@@ -19,24 +18,23 @@ interface Props {
   title?: string;
 }
 
-const DURATION_STEPS = [
-  10_000, 15_000, 20_000, 30_000, 45_000,
-  60_000, 90_000, 120_000, 180_000, 300_000,
-  600_000, 900_000, 1_200_000, 1_500_000, 1_800_000,
-  2_700_000, 3_600_000, 5_400_000, 7_200_000,
+// Quick-pick durations tuned per phase type. Warm-ups are short lead-ins;
+// normal phases are the main sitting lengths.
+const WARMUP_STEPS = [30_000, 60_000, 90_000, 120_000, 180_000, 300_000, 600_000];
+const NORMAL_STEPS = [
+  300_000, 600_000, 900_000, 1_200_000, 1_500_000,
+  1_800_000, 2_700_000, 3_600_000, 5_400_000, 7_200_000,
 ];
 
-function closestStep(ms: number): number {
-  let closest = DURATION_STEPS[0];
-  let minDiff = Math.abs(ms - closest);
-  for (const step of DURATION_STEPS) {
-    const diff = Math.abs(ms - step);
-    if (diff < minDiff) {
-      minDiff = diff;
-      closest = step;
-    }
-  }
-  return closest;
+function stepsForType(type: DurationType): number[] {
+  return type === 'WARMUP' ? WARMUP_STEPS : NORMAL_STEPS;
+}
+
+function closestStep(ms: number, steps: number[]): number {
+  return steps.reduce(
+    (best, s) => (Math.abs(s - ms) < Math.abs(best - ms) ? s : best),
+    steps[0]
+  );
 }
 
 function formatMs(ms: number): string {
@@ -64,9 +62,7 @@ export default function DurationEditor({
   const c = theme.colors;
   const [name, setName] = useState(initialName);
   const [type, setType] = useState<DurationType>(initialType);
-  const [stepIndex, setStepIndex] = useState(
-    Math.max(0, DURATION_STEPS.indexOf(closestStep(initialDurationMs)))
-  );
+  const [durationMs, setDurationMs] = useState(initialDurationMs);
   const [soundConfigs, setSoundConfigs] = useState<SoundConfig[]>(initialSoundConfigs);
 
   const [soundDialogVisible, setSoundDialogVisible] = useState(false);
@@ -76,12 +72,21 @@ export default function DurationEditor({
     if (visible) {
       setName(initialName);
       setType(initialType);
-      setStepIndex(Math.max(0, DURATION_STEPS.indexOf(closestStep(initialDurationMs))));
+      setDurationMs(initialDurationMs);
       setSoundConfigs(initialSoundConfigs);
     }
   }, [visible, initialName, initialType, initialDurationMs, initialSoundConfigs]);
 
   const isInfinite = type === 'INFINITE';
+
+  // Switch the duration into the new type's range (warm-up vs normal) so the
+  // chips always reflect a sensible value for the chosen kind of phase.
+  const handleSetType = (next: DurationType) => {
+    setType(next);
+    if (next !== 'INFINITE') {
+      setDurationMs((cur) => closestStep(cur, stepsForType(next)));
+    }
+  };
 
   const typeOptions: { value: DurationType; label: string; color: string }[] = [
     { value: 'WARMUP', label: 'Warm-up', color: c.warmup },
@@ -103,7 +108,7 @@ export default function DurationEditor({
 
   return (
     <>
-    <Modal visible={visible} transparent animationType="fade">
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <View style={{ flex: 1, justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.5)', padding: spacing.lg }}>
         <View style={{ backgroundColor: c.surface, borderRadius: radius.card, padding: spacing.base, maxHeight: '90%' }}>
           <Text style={[typography.section, { fontSize: 18, color: c.onBackground, marginBottom: spacing.base }]}>
@@ -134,7 +139,7 @@ export default function DurationEditor({
               {typeOptions.map((opt) => (
                 <Pressable
                   key={opt.value}
-                  onPress={() => setType(opt.value)}
+                  onPress={() => handleSetType(opt.value)}
                   style={{
                     flex: 1,
                     paddingVertical: spacing.sm + 2,
@@ -155,24 +160,34 @@ export default function DurationEditor({
               ))}
             </View>
 
-            {/* Duration Slider (hidden for infinite) */}
+            {/* Duration quick-pick chips (hidden for infinite) */}
             {!isInfinite && (
               <>
                 <Text style={[typography.meta, { color: c.textMute, marginBottom: spacing.xs }]}>Duration</Text>
                 <Text style={[typography.title, { fontSize: 24, color: c.onBackground, textAlign: 'center', marginBottom: spacing.sm }]}>
-                  {formatMs(DURATION_STEPS[stepIndex])}
+                  {formatMs(durationMs)}
                 </Text>
-                <Slider
-                  minimumValue={0}
-                  maximumValue={DURATION_STEPS.length - 1}
-                  step={1}
-                  value={stepIndex}
-                  onValueChange={(v) => setStepIndex(Math.round(v))}
-                  minimumTrackTintColor={c.accent}
-                  maximumTrackTintColor={c.surface2}
-                  thumbTintColor={c.accent}
-                  style={{ marginBottom: spacing.base }}
-                />
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginBottom: spacing.base }}>
+                  {stepsForType(type).map((ms) => {
+                    const selected = ms === durationMs;
+                    return (
+                      <Pressable
+                        key={ms}
+                        onPress={() => setDurationMs(ms)}
+                        style={{
+                          paddingHorizontal: spacing.base,
+                          paddingVertical: spacing.sm,
+                          borderRadius: radius.pill,
+                          backgroundColor: selected ? c.accent : c.surface2,
+                        }}
+                      >
+                        <Text style={[typography.bodyEm, { color: selected ? '#fff' : c.textDim }]}>
+                          {formatMs(ms)}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
               </>
             )}
 
@@ -257,7 +272,7 @@ export default function DurationEditor({
             </Pressable>
             <Pressable
               onPress={() => {
-                const ms = isInfinite ? 0 : DURATION_STEPS[stepIndex];
+                const ms = isInfinite ? 0 : durationMs;
                 onSave(name || 'Phase', type, ms, soundConfigs);
                 onClose();
               }}

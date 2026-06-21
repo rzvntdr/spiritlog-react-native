@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { MeditationSession } from '../types/session';
 import * as repo from '../db/sessionRepository';
+import * as streak from '../services/streakCheckpoint';
 import { createLogger } from '../utils/logger';
 import { useSettingsStore } from './settingsStore';
 
@@ -84,7 +85,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
           repo.getSessionsCountThisWeek(),
           repo.getAverageSessionDuration(),
           repo.getLongestSession(),
-          repo.getStreakState(rate),
+          streak.getStreakState(rate),
         ]);
       log.debug('loadStats', {
         totalSessions,
@@ -143,7 +144,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
           repo.getSessionsCountThisWeek(),
           repo.getAverageSessionDuration(),
           repo.getLongestSession(),
-          repo.getStreakState(rate),
+          streak.onSessionAdded(session.date, rate),
         ]);
       set({
         sessions,
@@ -168,8 +169,31 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     try {
       log.info('deleteSession', { id });
       await repo.deleteSession(id);
-      const sessions = await repo.getAllSessions();
-      set({ sessions });
+      const rate = useSettingsStore.getState().freezeEarnRate;
+      // Deletion can change history arbitrarily — rebuild the checkpoint.
+      const [sessions, totalSessions, totalMinutes, thisWeek, avgDuration, longestSession, streakState] =
+        await Promise.all([
+          repo.getAllSessions(),
+          repo.getTotalSessionCount(),
+          repo.getTotalMeditationMinutes(),
+          repo.getSessionsCountThisWeek(),
+          repo.getAverageSessionDuration(),
+          repo.getLongestSession(),
+          streak.onSessionsRebuilt(rate),
+        ]);
+      set({
+        sessions,
+        stats: {
+          totalSessions,
+          totalMinutes,
+          thisWeek,
+          avgDuration,
+          currentStreak: streakState.streak,
+          bestStreak: streakState.best,
+          longestSession,
+          freezesAvailable: streakState.freezesAvailable,
+        },
+      });
     } catch (e) {
       log.error('deleteSession failed', { id }, e);
     }

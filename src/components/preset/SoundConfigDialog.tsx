@@ -43,7 +43,7 @@ export default function SoundConfigDialog({ visible, onClose, onSave, phase }: P
   };
 
   return (
-    <Modal visible={visible} transparent animationType="fade">
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <View style={{ flex: 1, justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.5)', padding: 24 }}>
         <View style={{ backgroundColor: c.surface, borderRadius: 16, padding: 20, maxHeight: '85%' }}>
           <Text style={{ fontSize: 18, fontWeight: '700', color: c.onBackground, marginBottom: 4 }}>

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, Pressable, TextInput, ScrollView, Modal } from 'react-native';
+import { View, Text, Pressable, ScrollView, Modal } from 'react-native';
 import { useTheme } from '../../theme/ThemeContext';
 import { SOUNDS } from '../../types/sound';
 import { soundEngine } from '../../services/soundEngine';
@@ -8,7 +8,6 @@ interface Props {
   visible: boolean;
   onClose: () => void;
   onSave: (name: string, soundId: number) => void;
-  initialName?: string;
   initialSoundId?: number;
   title?: string;
 }
@@ -17,47 +16,27 @@ export default function SoundPickerDialog({
   visible,
   onClose,
   onSave,
-  initialName = '',
   initialSoundId = 1,
   title = 'Edit Sound',
 }: Props) {
   const { theme } = useTheme();
   const c = theme.colors;
-  const [name, setName] = useState(initialName);
   const [soundId, setSoundId] = useState(initialSoundId);
 
   // Reset state when dialog opens
   React.useEffect(() => {
     if (visible) {
-      setName(initialName);
       setSoundId(initialSoundId);
     }
-  }, [visible, initialName, initialSoundId]);
+  }, [visible, initialSoundId]);
 
   return (
-    <Modal visible={visible} transparent animationType="fade">
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <View style={{ flex: 1, justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.5)', padding: 24 }}>
         <View style={{ backgroundColor: c.surface, borderRadius: 16, padding: 20 }}>
           <Text style={{ fontSize: 18, fontWeight: '700', color: c.onBackground, marginBottom: 16 }}>
             {title}
           </Text>
-
-          {/* Sound Name */}
-          <Text style={{ fontSize: 12, color: c.onSurface, marginBottom: 4 }}>Sound Name</Text>
-          <TextInput
-            value={name}
-            onChangeText={setName}
-            placeholder="e.g. Start Meditation"
-            placeholderTextColor={c.onSurface}
-            style={{
-              backgroundColor: c.surfaceVariant,
-              borderRadius: 8,
-              padding: 12,
-              color: c.onBackground,
-              fontSize: 16,
-              marginBottom: 16,
-            }}
-          />
 
           {/* Sound Selector */}
           <Text style={{ fontSize: 12, color: c.onSurface, marginBottom: 8 }}>Sound</Text>
@@ -107,7 +86,11 @@ export default function SoundPickerDialog({
               <Text style={{ color: c.primary, fontWeight: '600' }}>Cancel</Text>
             </Pressable>
             <Pressable
-              onPress={() => { onSave(name || 'Sound', soundId); onClose(); }}
+              onPress={() => {
+                const asset = SOUNDS.find((s) => s.id === soundId);
+                onSave(asset?.name ?? 'Sound', soundId);
+                onClose();
+              }}
               style={{ backgroundColor: c.primaryContainer, borderRadius: 8, paddingHorizontal: 16, paddingVertical: 10 }}
             >
               <Text style={{ color: c.onPrimary, fontWeight: '600' }}>Save Changes</Text>

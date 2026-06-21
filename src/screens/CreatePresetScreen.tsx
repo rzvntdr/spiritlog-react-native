@@ -81,14 +81,22 @@ export default function CreatePresetScreen({ navigation, route }: Props) {
   const phaseCount = durationElements.length;
   const canSave = name.trim().length > 0 && elements.length > 0;
 
+  // The AddElement sheet is a <Modal>, and so are the editors. Android can't
+  // present a second Modal while the first is still dismissing — the new one
+  // silently never appears. Wait for the sheet's close animation to finish
+  // before opening the editor.
+  const MODAL_SWAP_DELAY = 350;
+
   const handleOpenAddPhase = () => {
     setEditingElementIndex(null);
-    setDurationEditorVisible(true);
+    setAddElementVisible(false);
+    setTimeout(() => setDurationEditorVisible(true), MODAL_SWAP_DELAY);
   };
 
   const handleOpenAddSound = () => {
     setEditingElementIndex(null);
-    setSoundPickerVisible(true);
+    setAddElementVisible(false);
+    setTimeout(() => setSoundPickerVisible(true), MODAL_SWAP_DELAY);
   };
 
   const insertOrAppend = (newEl: BuilderElement) => {
@@ -401,7 +409,6 @@ export default function CreatePresetScreen({ navigation, route }: Props) {
         visible={soundPickerVisible}
         onClose={() => { setSoundPickerVisible(false); setEditingElementIndex(null); setAddInsertIndex(null); }}
         onSave={handleSaveSound}
-        initialName={editingSoundElement?.name ?? 'Sound'}
         initialSoundId={editingSoundElement?.soundId ?? 1}
         title={editingElementIndex !== null ? 'Edit Sound' : 'Add Sound'}
       />

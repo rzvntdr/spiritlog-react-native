@@ -14,7 +14,7 @@ export default function BottomSheet({ visible, onClose, title, children }: Props
   const c = theme.colors;
 
   return (
-    <Modal visible={visible} transparent animationType="slide">
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <Pressable style={{ flex: 1 }} onPress={onClose} />
       <View
         style={{

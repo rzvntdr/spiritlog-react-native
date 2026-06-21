@@ -1,6 +1,7 @@
 import { getDatabase } from '../db/database';
 import { getAllPresets, insertPreset, getPresetCount } from '../db/presetRepository';
 import { getAllSessions, insertSession } from '../db/sessionRepository';
+import { clearCheckpoint } from './streakCheckpoint';
 import { PresetTimer } from '../types/preset';
 import { MeditationSession } from '../types/session';
 
@@ -53,6 +54,10 @@ export async function importBackupData(jsonString: string): Promise<{ presetCoun
   for (const session of backup.sessions) {
     await insertSession(session);
   }
+
+  // History was replaced wholesale — invalidate the streak checkpoint so it
+  // rebuilds from the restored sessions on the next read.
+  await clearCheckpoint();
 
   return { presetCount: backup.presets.length, sessionCount: backup.sessions.length };
 }

@@ -20,6 +20,8 @@ export default function SoundMarker({ soundId, name, mode, onEdit, onDrag, isDra
 
   const asset = getSoundById(soundId);
   const emoji = asset?.emoji ?? '🎵';
+  // The sound's own name is the label — no custom naming (see SoundPickerDialog).
+  const label = asset?.name ?? name;
 
   const inner = (
     <View
@@ -36,7 +38,7 @@ export default function SoundMarker({ soundId, name, mode, onEdit, onDrag, isDra
         style={[typography.meta, { color: c.textDim, marginLeft: spacing.xs - 2 }]}
         numberOfLines={1}
       >
-        {name}
+        {label}
       </Text>
       {mode === 'editor' && (
         <Pressable onLongPress={onDrag} delayLongPress={300} hitSlop={8} style={styles.dragHandle}>
